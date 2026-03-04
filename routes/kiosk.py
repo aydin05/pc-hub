@@ -3,11 +3,14 @@ import signal
 import os
 import threading
 import time
+import logging
 import urllib.request
 import urllib.error
 from flask import Blueprint, render_template, request, jsonify
-from app import login_required
+from auth_utils import login_required
 from database import get_setting, set_setting
+
+logger = logging.getLogger(__name__)
 from sysdetect import get_sys
 
 kiosk_bp = Blueprint('kiosk', __name__)
@@ -75,12 +78,12 @@ def _launch_chromium(url=None):
     if devtools:
         cmd.append('--remote-debugging-port=9222')
 
-    display = os.environ.get('DISPLAY', ':0')
-    env = os.environ.copy()
-    env['DISPLAY'] = display
+    # Use sysdetect env which includes DISPLAY, XAUTHORITY, etc.
+    env = get_sys().get_env_with_display()
 
     cmd.append(url)
 
+    logger.info('Launching kiosk: %s', ' '.join(cmd))
     _chromium_process = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return _chromium_process.pid
 

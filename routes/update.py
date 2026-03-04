@@ -1,8 +1,12 @@
 import subprocess
 import os
+import logging
 from flask import Blueprint, render_template, request, jsonify, Response
-from app import login_required
+from auth_utils import login_required
 from config import BASE_DIR, VERSION_FILE
+from sysdetect import get_sys
+
+logger = logging.getLogger(__name__)
 
 update_bp = Blueprint('update', __name__)
 
@@ -89,8 +93,10 @@ def pull():
                 yield f"data: [SUCCESS] Update complete. Version: {_get_version()}\n\n"
                 yield "data: [RESTARTING] Restarting service...\n\n"
                 try:
+                    sys = get_sys()
+                    systemctl_bin = sys.bin('systemctl') or 'systemctl'
                     subprocess.Popen(
-                        ['sudo', 'systemctl', 'restart', 'kiosk-manager'],
+                        ['sudo', systemctl_bin, 'restart', 'kiosk-manager'],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
                 except Exception:

@@ -179,7 +179,8 @@ header "Step 3/7 — Setting up Python virtualenv"
 sudo -u "$SERVICE_USER" python3 -m venv "$INSTALL_DIR/venv"
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --quiet -r "$INSTALL_DIR/requirements.txt"
-log "Python dependencies installed"
+sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --quiet gunicorn
+log "Python dependencies installed (including gunicorn)"
 
 # ══════════════════════════════════════════════════════════════
 #  STEP 4: Create data directory
@@ -196,14 +197,21 @@ header "Step 5/7 — Configuring sudoers"
 
 SUDOERS_FILE="/etc/sudoers.d/kiosk-manager"
 echo "# Kiosk Manager sudoers — auto-generated $(date)" > "$SUDOERS_FILE"
+echo "Defaults:$SERVICE_USER !requiretty" >> "$SUDOERS_FILE"
+echo "" >> "$SUDOERS_FILE"
 
 # Only add entries for binaries that actually exist on this system
 add_sudoers_entry() {
     local bin_path
     bin_path=$(command -v "$1" 2>/dev/null || true)
     if [ -n "$bin_path" ]; then
-        echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $bin_path $2" >> "$SUDOERS_FILE"
-        info "  sudoers: $bin_path $2"
+        if [ -n "$2" ]; then
+            echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $bin_path $2" >> "$SUDOERS_FILE"
+            info "  sudoers: $bin_path $2"
+        else
+            echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $bin_path" >> "$SUDOERS_FILE"
+            info "  sudoers: $bin_path (any args)"
+        fi
     fi
 }
 
@@ -221,8 +229,27 @@ add_sudoers_entry scrot ""
 add_sudoers_entry grim ""
 add_sudoers_entry gnome-screenshot ""
 
+# Also allow the resolved paths via sysdetect (shutil.which)
+# Add common alternative paths for key binaries
+for alt_bin in /sbin/reboot /usr/sbin/reboot; do
+    if [ -x "$alt_bin" ]; then
+        echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $alt_bin" >> "$SUDOERS_FILE"
+    fi
+done
+for alt_bin in /sbin/poweroff /usr/sbin/poweroff; do
+    if [ -x "$alt_bin" ]; then
+        echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $alt_bin" >> "$SUDOERS_FILE"
+    fi
+done
+
 chmod 440 "$SUDOERS_FILE"
-log "Sudoers configured at $SUDOERS_FILE"
+
+# Validate sudoers file
+if visudo -cf "$SUDOERS_FILE" &>/dev/null; then
+    log "Sudoers configured at $SUDOERS_FILE"
+else
+    error "Sudoers file has syntax errors! Check $SUDOERS_FILE"
+fi
 
 # ══════════════════════════════════════════════════════════════
 #  STEP 6: systemd services
@@ -241,12 +268,15 @@ Type=simple
 User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python3 $INSTALL_DIR/app.py
+ExecStart=$INSTALL_DIR/venv/bin/gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile - wsgi:app
 Restart=always
 RestartSec=5
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=wayland-0
 Environment=XDG_SESSION_TYPE=$DISPLAY_SERVER
+Environment=XAUTHORITY=$REAL_HOME/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $SERVICE_USER)
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u $SERVICE_USER)/bus
 Environment=KIOSK_SECRET_KEY=$SECRET_KEY
 
 [Install]
@@ -265,6 +295,10 @@ After=display-manager.service
 Type=oneshot
 User=$SERVICE_USER
 Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_SESSION_TYPE=$DISPLAY_SERVER
+Environment=XAUTHORITY=$REAL_HOME/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $SERVICE_USER)
 ExecStart=$INSTALL_DIR/deploy/apply-resolution.sh
 RemainAfterExit=yes
 

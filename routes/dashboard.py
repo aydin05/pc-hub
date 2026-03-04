@@ -1,6 +1,6 @@
 import os
 from flask import Blueprint, render_template, jsonify
-from app import login_required
+from auth_utils import login_required
 from config import VERSION_FILE
 from sysdetect import get_sys
 

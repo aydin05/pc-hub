@@ -1,7 +1,10 @@
 import subprocess
+import logging
 from flask import Blueprint, render_template, request, jsonify
-from app import login_required
+from auth_utils import login_required
 from sysdetect import get_sys
+
+logger = logging.getLogger(__name__)
 
 system_bp = Blueprint('system', __name__)
 
@@ -23,9 +26,11 @@ def reboot():
     if not cmd:
         return jsonify({'error': 'Reboot command not available on this system'}), 500
     try:
+        logger.info('Executing reboot: %s', cmd)
         subprocess.Popen(cmd)
         return jsonify({'success': True, 'message': 'System is rebooting...'})
     except Exception as e:
+        logger.error('Reboot failed: %s', e)
         return jsonify({'error': str(e)}), 500
 
 
@@ -40,6 +45,7 @@ def shutdown():
     if not cmd:
         return jsonify({'error': 'Shutdown command not available on this system'}), 500
     try:
+        logger.info('Executing shutdown: %s', cmd)
         subprocess.Popen(cmd)
         return jsonify({'success': True, 'message': 'System is shutting down...'})
     except Exception as e:

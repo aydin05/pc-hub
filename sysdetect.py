@@ -321,12 +321,35 @@ class SystemInfo:
         return platform.release()
 
     def get_env_with_display(self):
-        """Return env dict with DISPLAY set."""
+        """Return env dict with DISPLAY and XAUTHORITY set."""
         env = os.environ.copy()
         if self.display_server == 'x11':
             env.setdefault('DISPLAY', ':0')
+            # XAUTHORITY is required for X11 tools to authenticate
+            if 'XAUTHORITY' not in env:
+                # Try common locations
+                user_home = os.path.expanduser('~')
+                xauth = os.path.join(user_home, '.Xauthority')
+                if os.path.exists(xauth):
+                    env['XAUTHORITY'] = xauth
+                else:
+                    # Try /run/user/<uid>/gdm/Xauthority (GDM)
+                    uid = os.getuid()
+                    for candidate in [
+                        f'/run/user/{uid}/gdm/Xauthority',
+                        f'/tmp/.Xauthority-{uid}',
+                    ]:
+                        if os.path.exists(candidate):
+                            env['XAUTHORITY'] = candidate
+                            break
         elif self.display_server == 'wayland':
             env.setdefault('WAYLAND_DISPLAY', 'wayland-0')
+            # XDG_RUNTIME_DIR needed for Wayland compositors
+            if 'XDG_RUNTIME_DIR' not in env:
+                uid = os.getuid()
+                xdg_dir = f'/run/user/{uid}'
+                if os.path.isdir(xdg_dir):
+                    env['XDG_RUNTIME_DIR'] = xdg_dir
         return env
 
     def summary(self):

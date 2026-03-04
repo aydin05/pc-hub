@@ -2,7 +2,7 @@ import subprocess
 import re
 import socket
 from flask import Blueprint, render_template, request, jsonify, Response
-from app import login_required
+from auth_utils import login_required
 from sysdetect import get_sys
 
 diagnostics_bp = Blueprint('diagnostics', __name__)

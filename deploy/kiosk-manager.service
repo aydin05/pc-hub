@@ -7,10 +7,12 @@ Type=simple
 User=kiosk
 Group=kiosk
 WorkingDirectory=/opt/kiosk-manager
-ExecStart=/usr/bin/python3 /opt/kiosk-manager/app.py
+ExecStart=/opt/kiosk-manager/venv/bin/gunicorn --bind 0.0.0.0:5000 --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile - wsgi:app
 Restart=always
 RestartSec=5
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/kiosk/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=KIOSK_SECRET_KEY=change-me-to-random-string
 
 [Install]

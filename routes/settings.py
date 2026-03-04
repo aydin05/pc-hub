@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, jsonify
-from app import login_required
+from auth_utils import login_required
 from database import get_setting, set_setting, get_all_settings
 
 settings_bp = Blueprint('settings', __name__)

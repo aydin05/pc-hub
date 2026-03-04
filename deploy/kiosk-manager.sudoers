@@ -2,11 +2,22 @@
 # Install: sudo cp kiosk-manager.sudoers /etc/sudoers.d/kiosk-manager
 # Replace 'kiosk' with the actual username running the application
 
+Defaults:kiosk !requiretty
+
 kiosk ALL=(ALL) NOPASSWD: /sbin/reboot
+kiosk ALL=(ALL) NOPASSWD: /usr/sbin/reboot
 kiosk ALL=(ALL) NOPASSWD: /sbin/poweroff
+kiosk ALL=(ALL) NOPASSWD: /usr/sbin/poweroff
 kiosk ALL=(ALL) NOPASSWD: /usr/bin/xrandr
+kiosk ALL=(ALL) NOPASSWD: /usr/bin/wlr-randr
 kiosk ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 kiosk ALL=(ALL) NOPASSWD: /usr/bin/timedatectl
 kiosk ALL=(ALL) NOPASSWD: /usr/bin/hostnamectl
 kiosk ALL=(ALL) NOPASSWD: /usr/bin/scrot
+kiosk ALL=(ALL) NOPASSWD: /usr/bin/grim
 kiosk ALL=(ALL) NOPASSWD: /bin/systemctl restart kiosk-manager
+kiosk ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart kiosk-manager
+kiosk ALL=(ALL) NOPASSWD: /bin/systemctl reboot
+kiosk ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot
+kiosk ALL=(ALL) NOPASSWD: /bin/systemctl poweroff
+kiosk ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff

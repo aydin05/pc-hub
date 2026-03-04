@@ -1,6 +1,7 @@
 #!/bin/bash
 # Apply saved display resolution on boot
 # Called by kiosk-resolution.service
+# Supports both X11 (xrandr) and Wayland (wlr-randr)
 
 DB_PATH="/opt/kiosk-manager/data/kiosk.db"
 
@@ -19,5 +20,15 @@ MODE=$(echo "$RESOLUTION" | cut -d':' -f2)
 
 if [ -n "$OUTPUT" ] && [ -n "$MODE" ]; then
     sleep 3
-    xrandr --output "$OUTPUT" --mode "$MODE"
+
+    # Detect display server and apply
+    if [ "$XDG_SESSION_TYPE" = "wayland" ] || [ -n "$WAYLAND_DISPLAY" ]; then
+        if command -v wlr-randr &>/dev/null; then
+            wlr-randr --output "$OUTPUT" --mode "$MODE"
+        fi
+    else
+        if command -v xrandr &>/dev/null; then
+            xrandr --output "$OUTPUT" --mode "$MODE"
+        fi
+    fi
 fi

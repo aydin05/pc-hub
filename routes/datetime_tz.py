@@ -1,9 +1,12 @@
 import subprocess
 import re
 import time as _time
+import logging
 from flask import Blueprint, render_template, request, jsonify
-from app import login_required
+from auth_utils import login_required
 from sysdetect import get_sys
+
+logger = logging.getLogger(__name__)
 
 datetime_bp = Blueprint('datetime_tz', __name__)
 
@@ -13,10 +16,21 @@ SAFE_TZ_RE = re.compile(r'^[a-zA-Z0-9_/\-\+]+$')
 def _run_cmd(cmd, timeout=10):
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return result.stdout.strip(), result.returncode
+        output = result.stdout.strip()
+        if result.returncode != 0:
+            err = result.stderr.strip()
+            if err:
+                output = f"{output}\n{err}".strip() if output else err
+            logger.warning('Command %s failed (rc=%d): %s', cmd, result.returncode, output)
+        return output, result.returncode
     except FileNotFoundError:
-        return '', 1
+        logger.error('Command not found: %s', cmd[0] if cmd else '')
+        return f'Command not found: {cmd[0] if cmd else ""}', 1
+    except subprocess.TimeoutExpired:
+        logger.error('Command timed out: %s', cmd)
+        return 'Command timed out', 1
     except Exception as e:
+        logger.error('Command error: %s', e)
         return str(e), 1
 
 

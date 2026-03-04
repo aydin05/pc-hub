@@ -2,11 +2,14 @@
 """Linux Kiosk Management Dashboard - Main Application"""
 
 import os
+import logging
 from flask import Flask, redirect, url_for, session, request, jsonify
-from functools import wraps
 
 from config import SECRET_KEY, BIND_HOST, BIND_PORT, SCREENSHOTS_DIR, LAN_ONLY
 from database import init_db, get_setting
+
+# Re-export for backward compatibility (avoid circular imports via auth_utils)
+from auth_utils import login_required  # noqa: F401
 
 
 def create_app():
@@ -69,18 +72,9 @@ def create_app():
     return app
 
 
-def login_required(f):
-    """Decorator to require authentication if auth is enabled."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        auth_enabled = get_setting('auth_enabled', '0')
-        if auth_enabled == '1' and not session.get('authenticated'):
-            return redirect(url_for('auth.login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s %(levelname)s %(message)s')
     app = create_app()
     debug = os.environ.get('FLASK_DEBUG', '0') == '1'
     app.run(host=BIND_HOST, port=BIND_PORT, debug=debug, threaded=True)

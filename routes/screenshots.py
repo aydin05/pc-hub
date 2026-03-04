@@ -1,9 +1,12 @@
 import subprocess
 import os
 import time
+import logging
 from flask import Blueprint, render_template, request, jsonify, send_from_directory
-from app import login_required
+from auth_utils import login_required
 from config import SCREENSHOTS_DIR
+
+logger = logging.getLogger(__name__)
 from database import get_db
 from sysdetect import get_sys
 
