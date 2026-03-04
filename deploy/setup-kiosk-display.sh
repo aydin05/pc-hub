@@ -132,14 +132,6 @@ WM_PID=$!
 # Wait for openbox to be ready
 sleep 2
 
-# Launch Chromium in kiosk mode
-KIOSK_URL_FILE="$HOME/.kiosk-url"
-if [ -f "$KIOSK_URL_FILE" ]; then
-    URL=$(cat "$KIOSK_URL_FILE")
-else
-    URL="__KIOSK_URL__"
-fi
-
 # Build Chrome flags
 CHROME_FLAGS=(
     --kiosk
@@ -160,15 +152,24 @@ fi
 # VM-friendly GPU flags
 CHROME_FLAGS+=(--disable-gpu --disable-software-rasterizer)
 
-echo "Launching: __BROWSER__ ${CHROME_FLAGS[*]} $URL"
-__BROWSER__ "${CHROME_FLAGS[@]}" "$URL"
-RETCODE=$?
+# Launch Chrome in a loop — re-reads URL each time so dashboard changes take effect
+while true; do
+    KIOSK_URL_FILE="$HOME/.kiosk-url"
+    if [ -f "$KIOSK_URL_FILE" ]; then
+        URL=$(cat "$KIOSK_URL_FILE")
+    else
+        URL="__KIOSK_URL__"
+    fi
 
-echo "Chrome exited with code $RETCODE at $(date)"
-date +%s > "$CRASH_FILE"
+    echo "Launching: __BROWSER__ ${CHROME_FLAGS[*]} $URL"
+    __BROWSER__ "${CHROME_FLAGS[@]}" "$URL"
+    RETCODE=$?
 
-# Clean up window manager
-kill $WM_PID 2>/dev/null
+    echo "Chrome exited with code $RETCODE at $(date)"
+
+    # Brief pause before relaunch to avoid tight loop on crash
+    sleep 2
+done
 XINITRC
 
 # Replace placeholders

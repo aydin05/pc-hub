@@ -188,6 +188,17 @@ def kill():
     return jsonify({'success': True})
 
 
+def _write_kiosk_url_file(url):
+    """Write the kiosk URL to ~/.kiosk-url so .xinitrc picks it up."""
+    try:
+        url_file = os.path.expanduser('~/.kiosk-url')
+        with open(url_file, 'w') as f:
+            f.write(url)
+        logger.info('Wrote kiosk URL to %s', url_file)
+    except Exception as e:
+        logger.warning('Could not write ~/.kiosk-url: %s', e)
+
+
 @kiosk_bp.route('/api/settings', methods=['POST'])
 @login_required
 def update_settings():
@@ -197,6 +208,7 @@ def update_settings():
         if not url.startswith(('http://', 'https://')):
             return jsonify({'error': 'URL must start with http:// or https://'}), 400
         set_setting('kiosk_url', url)
+        _write_kiosk_url_file(url)
     if 'devtools' in data:
         set_setting('kiosk_devtools', '1' if data['devtools'] else '0')
     if 'watchdog' in data:
