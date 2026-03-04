@@ -101,6 +101,21 @@ header "Step 3/5 — Creating .xinitrc (X11 startup)"
 cat > "$KIOSK_HOME/.xinitrc" <<'XINITRC'
 #!/bin/bash
 # Kiosk X11 startup
+LOGFILE="$HOME/.kiosk-x11.log"
+exec >> "$LOGFILE" 2>&1
+echo "=== Kiosk X11 starting at $(date) ==="
+
+# Crash guard: if X crashed less than 10 seconds ago, wait before retrying
+CRASH_FILE="$HOME/.kiosk-last-crash"
+if [ -f "$CRASH_FILE" ]; then
+    LAST_CRASH=$(cat "$CRASH_FILE")
+    NOW=$(date +%s)
+    DIFF=$((NOW - LAST_CRASH))
+    if [ "$DIFF" -lt 10 ]; then
+        echo "Crash loop detected (last crash ${DIFF}s ago). Sleeping 30s..."
+        sleep 30
+    fi
+fi
 
 # Disable screen saver and power management
 xset s off
@@ -112,12 +127,12 @@ unclutter -idle 3 -root &
 
 # Start openbox window manager
 openbox-session &
+WM_PID=$!
 
 # Wait for openbox to be ready
 sleep 2
 
 # Launch Chromium in kiosk mode
-# The URL is read from the kiosk-manager database, fallback to config file
 KIOSK_URL_FILE="$HOME/.kiosk-url"
 if [ -f "$KIOSK_URL_FILE" ]; then
     URL=$(cat "$KIOSK_URL_FILE")
@@ -125,16 +140,35 @@ else
     URL="__KIOSK_URL__"
 fi
 
-__BROWSER__ \
-    --kiosk \
-    --noerrdialogs \
-    --disable-infobars \
-    --no-first-run \
-    --disable-session-crashed-bubble \
-    --disable-features=TranslateUI \
-    --disable-translate \
-    --check-for-update-interval=31536000 \
-    "$URL"
+# Build Chrome flags
+CHROME_FLAGS=(
+    --kiosk
+    --noerrdialogs
+    --disable-infobars
+    --no-first-run
+    --disable-session-crashed-bubble
+    --disable-features=TranslateUI
+    --disable-translate
+    --check-for-update-interval=31536000
+)
+
+# Running as root requires --no-sandbox
+if [ "$(id -u)" = "0" ]; then
+    CHROME_FLAGS+=(--no-sandbox)
+fi
+
+# VM-friendly GPU flags
+CHROME_FLAGS+=(--disable-gpu --disable-software-rasterizer)
+
+echo "Launching: __BROWSER__ ${CHROME_FLAGS[*]} $URL"
+__BROWSER__ "${CHROME_FLAGS[@]}" "$URL"
+RETCODE=$?
+
+echo "Chrome exited with code $RETCODE at $(date)"
+date +%s > "$CRASH_FILE"
+
+# Clean up window manager
+kill $WM_PID 2>/dev/null
 XINITRC
 
 # Replace placeholders
