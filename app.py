@@ -82,4 +82,5 @@ def login_required(f):
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(host=BIND_HOST, port=BIND_PORT, debug=True, threaded=True)
+    debug = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(host=BIND_HOST, port=BIND_PORT, debug=debug, threaded=True)

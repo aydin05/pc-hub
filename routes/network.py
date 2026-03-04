@@ -145,18 +145,51 @@ def configure():
         return jsonify({'error': f'Network backend "{sys.net_backend}" not supported for configuration'}), 400
 
 
+def _get_connection_name(nmcli, iface):
+    """Return the NetworkManager connection profile name for a network device.
+
+    NetworkManager separates device names (e.g. 'enp3s0') from connection
+    profile names (e.g. 'Wired connection 1').  'nmcli con mod/down/up'
+    requires the profile name, not the device name.
+
+    Strategy:
+      1. Ask nmcli for the active connection on the device.
+      2. Fall back to any connection associated with the device.
+      3. Last resort: return the interface name unchanged (works on systems
+         where the profile is named after the interface).
+    """
+    # Step 1: active connection
+    output, rc = _run_cmd([nmcli, '-g', 'GENERAL.CONNECTION', 'device', 'show', iface])
+    if rc == 0 and output.strip() and output.strip() != '--':
+        return output.strip()
+
+    # Step 2: any connection with a matching device field
+    output, rc = _run_cmd([nmcli, '-t', '-f', 'NAME,DEVICE', 'con', 'show'])
+    if rc == 0:
+        for line in output.split('\n'):
+            # nmcli -t escapes colons inside field values as backslash-colon; split on the last bare ':'
+            parts = line.rsplit(':', 1)
+            if len(parts) == 2 and parts[1].strip() == iface:
+                return parts[0].replace('\\:', ':')
+
+    # Step 3: fall back to interface name
+    return iface
+
+
 def _configure_nmcli(nmcli, iface, method, data):
     """Configure network interface using nmcli."""
+    conn_name = _get_connection_name(nmcli, iface)
+
     if method == 'dhcp':
         output, rc = _run_cmd([
-            'sudo', nmcli, 'con', 'mod', iface,
+            'sudo', nmcli, 'con', 'mod', conn_name,
             'ipv4.method', 'auto',
             'ipv4.addresses', '',
             'ipv4.gateway', '',
             'ipv4.dns', '',
         ])
         if rc != 0:
-            return jsonify({'error': f'Failed to set DHCP: {output}'}), 500
+            return jsonify({'error': f'Failed to set DHCP: {output[:200]}'}), 500
 
     elif method == 'static':
         ip_addr = data.get('ip', '')
@@ -169,7 +202,7 @@ def _configure_nmcli(nmcli, iface, method, data):
             return jsonify({'error': 'Invalid gateway'}), 400
 
         cmd = [
-            'sudo', nmcli, 'con', 'mod', iface,
+            'sudo', nmcli, 'con', 'mod', conn_name,
             'ipv4.method', 'manual',
             'ipv4.addresses', ip_addr,
         ]
@@ -182,12 +215,14 @@ def _configure_nmcli(nmcli, iface, method, data):
 
         output, rc = _run_cmd(cmd)
         if rc != 0:
-            return jsonify({'error': f'Failed to set static IP: {output}'}), 500
+            return jsonify({'error': f'Failed to set static IP: {output[:200]}'}), 500
     else:
         return jsonify({'error': 'Invalid method'}), 400
 
-    _run_cmd(['sudo', nmcli, 'con', 'down', iface])
-    _run_cmd(['sudo', nmcli, 'con', 'up', iface])
+    _run_cmd(['sudo', nmcli, 'con', 'down', conn_name])
+    out, rc = _run_cmd(['sudo', nmcli, 'con', 'up', conn_name])
+    if rc != 0:
+        return jsonify({'error': f'Settings saved but failed to bring connection up: {out[:200]}'}), 500
 
     return jsonify({'success': True})
 
