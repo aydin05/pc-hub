@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply saved display resolution on boot
+After=display-manager.service
+
+[Service]
+Type=oneshot
+User=kiosk
+Environment=DISPLAY=:0
+ExecStart=/opt/kiosk-manager/deploy/apply-resolution.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target

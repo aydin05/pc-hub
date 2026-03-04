@@ -1,0 +1,158 @@
+import subprocess
+import re
+import time as _time
+from flask import Blueprint, render_template, request, jsonify
+from app import login_required
+from sysdetect import get_sys
+
+datetime_bp = Blueprint('datetime_tz', __name__)
+
+SAFE_TZ_RE = re.compile(r'^[a-zA-Z0-9_/\-\+]+$')
+
+
+def _run_cmd(cmd, timeout=10):
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return result.stdout.strip(), result.returncode
+    except FileNotFoundError:
+        return '', 1
+    except Exception as e:
+        return str(e), 1
+
+
+@datetime_bp.route('/')
+@login_required
+def datetime_page():
+    return render_template('datetime.html')
+
+
+@datetime_bp.route('/api/info')
+@login_required
+def info():
+    sys = get_sys()
+
+    if sys.has('timedatectl'):
+        output, _ = _run_cmd([sys.bin('timedatectl'), 'status'])
+        info_dict = {}
+        for line in output.split('\n'):
+            if ':' in line:
+                key, val = line.split(':', 1)
+                info_dict[key.strip()] = val.strip()
+        return jsonify(info_dict)
+
+    # Fallback for macOS / systems without timedatectl
+    import datetime
+    now = datetime.datetime.now()
+    tz_name = _time.tzname[0] if _time.tzname else 'Unknown'
+    return jsonify({
+        'Local time': now.strftime('%a %Y-%m-%d %H:%M:%S %Z'),
+        'Time zone': tz_name,
+        'NTP enabled': 'N/A',
+        'NTP synchronized': 'N/A',
+    })
+
+
+@datetime_bp.route('/api/timezones')
+@login_required
+def timezones():
+    sys = get_sys()
+
+    if sys.has('timedatectl'):
+        output, _ = _run_cmd([sys.bin('timedatectl'), 'list-timezones'])
+        zones = [z.strip() for z in output.split('\n') if z.strip()]
+        return jsonify({'timezones': zones})
+
+    # Fallback: use pytz-style common zones or read from system
+    try:
+        import zoneinfo
+        zones = sorted(zoneinfo.available_timezones())
+        return jsonify({'timezones': zones})
+    except ImportError:
+        pass
+
+    # Last resort: read from system zoneinfo
+    try:
+        import os
+        zones = []
+        zoneinfo_dir = '/usr/share/zoneinfo'
+        if sys.is_macos:
+            zoneinfo_dir = '/var/db/timezone/zoneinfo'
+        for root, dirs, files in os.walk(zoneinfo_dir):
+            dirs[:] = [d for d in dirs if d not in ('posix', 'right', '+VERSION')]
+            for f in files:
+                full = os.path.join(root, f)
+                rel = os.path.relpath(full, zoneinfo_dir)
+                if '/' in rel and not rel.startswith('.'):
+                    zones.append(rel)
+        return jsonify({'timezones': sorted(zones)})
+    except Exception:
+        return jsonify({'timezones': []})
+
+
+@datetime_bp.route('/api/set-timezone', methods=['POST'])
+@login_required
+def set_timezone():
+    sys = get_sys()
+    data = request.get_json()
+    tz = data.get('timezone', '').strip()
+
+    if not SAFE_TZ_RE.match(tz):
+        return jsonify({'error': 'Invalid timezone'}), 400
+
+    if sys.has('timedatectl'):
+        output, rc = _run_cmd(['sudo', sys.bin('timedatectl'), 'set-timezone', tz])
+    elif sys.is_macos:
+        output, rc = _run_cmd(['sudo', 'systemsetup', '-settimezone', tz])
+    else:
+        return jsonify({'error': 'No timezone tool available'}), 500
+
+    if rc != 0:
+        return jsonify({'error': f'Failed to set timezone: {output}'}), 500
+
+    return jsonify({'success': True, 'timezone': tz})
+
+
+@datetime_bp.route('/api/set-ntp', methods=['POST'])
+@login_required
+def set_ntp():
+    sys = get_sys()
+    data = request.get_json()
+    enabled = bool(data.get('enabled', True))
+    val = 'true' if enabled else 'false'
+
+    if sys.has('timedatectl'):
+        output, rc = _run_cmd(['sudo', sys.bin('timedatectl'), 'set-ntp', val])
+    elif sys.is_macos:
+        mac_val = 'on' if enabled else 'off'
+        output, rc = _run_cmd(['sudo', 'systemsetup', '-setusingnetworktime', mac_val])
+    else:
+        return jsonify({'error': 'No NTP tool available'}), 500
+
+    if rc != 0:
+        return jsonify({'error': f'Failed to set NTP: {output}'}), 500
+
+    return jsonify({'success': True, 'ntp': enabled})
+
+
+@datetime_bp.route('/api/set-time', methods=['POST'])
+@login_required
+def set_time():
+    sys = get_sys()
+    data = request.get_json()
+    datetime_str = data.get('datetime', '').strip()
+
+    if not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', datetime_str):
+        return jsonify({'error': 'Invalid datetime format. Use: YYYY-MM-DD HH:MM:SS'}), 400
+
+    if sys.has('timedatectl'):
+        _run_cmd(['sudo', sys.bin('timedatectl'), 'set-ntp', 'false'])
+        output, rc = _run_cmd(['sudo', sys.bin('timedatectl'), 'set-time', datetime_str])
+    elif sys.has('date'):
+        output, rc = _run_cmd(['sudo', sys.bin('date'), '-s', datetime_str])
+    else:
+        return jsonify({'error': 'No time-setting tool available'}), 500
+
+    if rc != 0:
+        return jsonify({'error': f'Failed to set time: {output}'}), 500
+
+    return jsonify({'success': True})

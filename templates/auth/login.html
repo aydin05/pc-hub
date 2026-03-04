@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Kiosk Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="sidebar-logo" style="margin:0 auto 16px;width:48px;height:48px;font-size:22px;">K</div>
+            <h1>Kiosk Manager</h1>
+            <p>Enter your PIN to access the dashboard</p>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div style="color:var(--danger);margin-bottom:16px;font-size:13px;">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+            <form method="POST">
+                <div class="form-group">
+                    <input type="password" name="pin" class="form-input pin-input" placeholder="PIN" maxlength="10" autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block btn-lg">Unlock</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

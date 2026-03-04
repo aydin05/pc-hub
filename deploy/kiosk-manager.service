@@ -1,0 +1,17 @@
+[Unit]
+Description=Kiosk Manager Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=kiosk
+Group=kiosk
+WorkingDirectory=/opt/kiosk-manager
+ExecStart=/usr/bin/python3 /opt/kiosk-manager/app.py
+Restart=always
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=KIOSK_SECRET_KEY=change-me-to-random-string
+
+[Install]
+WantedBy=multi-user.target

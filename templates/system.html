@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}System Controls - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>System Controls</h1>
+    <p>System information and power controls</p>
+</div>
+
+<div class="grid grid-4" id="sys-stats">
+    <div class="stat-card">
+        <div class="stat-label">CPU Cores</div>
+        <div class="stat-value" id="sys-cpu">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Memory</div>
+        <div class="stat-value" id="sys-mem">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Disk Usage</div>
+        <div class="stat-value" id="sys-disk">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Load Average</div>
+        <div class="stat-value" id="sys-load">-</div>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Memory</div>
+        </div>
+        <table>
+            <tr><td class="text-muted">Total</td><td id="mem-total">-</td></tr>
+            <tr><td class="text-muted">Used</td><td id="mem-used">-</td></tr>
+            <tr><td class="text-muted">Free</td><td id="mem-free">-</td></tr>
+        </table>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Disk (/)</div>
+        </div>
+        <table>
+            <tr><td class="text-muted">Total</td><td id="disk-total">-</td></tr>
+            <tr><td class="text-muted">Used</td><td id="disk-used">-</td></tr>
+            <tr><td class="text-muted">Free</td><td id="disk-free">-</td></tr>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="card-title">Power Controls</div>
+    </div>
+    <div class="btn-group">
+        <button class="btn btn-warning btn-lg" onclick="confirmReboot()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Reboot
+        </button>
+        <button class="btn btn-danger btn-lg" onclick="confirmShutdown()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+            Shutdown
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadSysInfo() {
+    api('/system/api/info').then(data => {
+        $('#sys-cpu').textContent = data.cpu_cores || '-';
+        $('#sys-load').textContent = data.load ? data.load.split(' ').slice(0, 3).join(' ') : '-';
+
+        if (data.memory) {
+            $('#sys-mem').textContent = (data.memory.used || '-') + ' / ' + (data.memory.total || '-');
+            $('#mem-total').textContent = data.memory.total || '-';
+            $('#mem-used').textContent = data.memory.used || '-';
+            $('#mem-free').textContent = data.memory.free || '-';
+        }
+
+        if (data.disk) {
+            $('#sys-disk').textContent = data.disk.percent || '-';
+            $('#disk-total').textContent = data.disk.total || '-';
+            $('#disk-used').textContent = data.disk.used || '-';
+            $('#disk-free').textContent = data.disk.free || '-';
+        }
+    }).catch(() => {});
+}
+
+function confirmReboot() {
+    Modal.show('Reboot System',
+        'Are you sure you want to <strong>reboot</strong> the system? All active sessions will be terminated.',
+        () => {
+            api('/system/api/reboot', { method: 'POST', body: { confirm: true } }).then(() => {
+                Toast.info('System is rebooting...');
+            }).catch(err => Toast.error(err.message));
+        },
+        'Reboot', 'btn-warning'
+    );
+}
+
+function confirmShutdown() {
+    Modal.show('Shutdown System',
+        'Are you sure you want to <strong>shut down</strong> the system? This will power off the machine.',
+        () => {
+            api('/system/api/shutdown', { method: 'POST', body: { confirm: true } }).then(() => {
+                Toast.info('System is shutting down...');
+            }).catch(err => Toast.error(err.message));
+        },
+        'Shutdown', 'btn-danger'
+    );
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadSysInfo();
+    setInterval(loadSysInfo, 15000);
+});
+</script>
+{% endblock %}

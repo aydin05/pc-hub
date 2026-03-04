@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p>System overview and quick status</p>
+</div>
+
+<div class="grid grid-4" id="stats">
+    <div class="stat-card">
+        <div class="stat-label">Hostname</div>
+        <div class="stat-value" id="stat-hostname">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">IP Address</div>
+        <div class="stat-value" id="stat-ip">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Uptime</div>
+        <div class="stat-value" id="stat-uptime">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Version</div>
+        <div class="stat-value" id="stat-version">-</div>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">System Info</div>
+        </div>
+        <table>
+            <tr><td class="text-muted" style="width:140px;">OS</td><td id="info-os">-</td></tr>
+            <tr><td class="text-muted">Kernel</td><td id="info-kernel">-</td></tr>
+            <tr><td class="text-muted">Hostname</td><td id="info-hostname">-</td></tr>
+        </table>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Local Time</div>
+        </div>
+        <div style="font-size:28px;font-weight:700;text-align:center;padding:24px 0;" id="live-clock">-</div>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Kiosk Status</div>
+        </div>
+        <div id="kiosk-status" style="text-align:center;padding:16px;">
+            <span class="badge badge-info">Checking...</span>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Quick Actions</div>
+        </div>
+        <div class="btn-group" style="flex-wrap:wrap;">
+            <a href="/kiosk/" class="btn btn-outline btn-sm">Kiosk Control</a>
+            <a href="/screenshots/" class="btn btn-outline btn-sm">Take Screenshot</a>
+            <a href="/diagnostics/" class="btn btn-outline btn-sm">Diagnostics</a>
+            <a href="/system/" class="btn btn-outline btn-sm">System Controls</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    startClock('live-clock');
+
+    api('/api/system-info').then(data => {
+        $('#stat-hostname').textContent = data.hostname || '-';
+        $('#stat-ip').textContent = data.ip || '-';
+        $('#stat-uptime').textContent = data.uptime || '-';
+        $('#stat-version').textContent = 'v' + (data.version || '?');
+        $('#info-os').textContent = data.os || '-';
+        $('#info-kernel').textContent = data.kernel || '-';
+        $('#info-hostname').textContent = data.hostname || '-';
+    }).catch(() => {
+        Toast.warning('Could not load system info');
+    });
+
+    api('/kiosk/api/status').then(data => {
+        const el = $('#kiosk-status');
+        if (data.running) {
+            el.innerHTML = '<span class="badge badge-success"><span class="badge-dot"></span>Running (PID: ' + data.pid + ')</span>';
+        } else {
+            el.innerHTML = '<span class="badge badge-danger"><span class="badge-dot"></span>Not Running</span>';
+        }
+    }).catch(() => {});
+});
+</script>
+{% endblock %}

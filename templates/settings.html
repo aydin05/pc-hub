@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Settings - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Settings</h1>
+    <p>Application configuration and preferences</p>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <div class="card-title mb-4">Authentication</div>
+        <div class="form-group">
+            <div class="toggle-wrap">
+                <label class="toggle">
+                    <input type="checkbox" id="set-auth-enabled">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span>Require PIN to access dashboard</span>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">PIN Code</label>
+            <input type="password" class="form-input" id="set-auth-pin" placeholder="Enter PIN" maxlength="10" style="max-width:200px;">
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title mb-4">Virtual Keyboard</div>
+        <div class="form-group">
+            <div class="toggle-wrap">
+                <label class="toggle">
+                    <input type="checkbox" id="set-keyboard-enabled">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span>Enable on-screen keyboard</span>
+            </div>
+        </div>
+        <p class="text-muted" style="font-size:12px;">The virtual keyboard will appear when input fields are focused. Useful for touchscreen deployments without a physical keyboard.</p>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-title mb-4">Kiosk Defaults</div>
+    <div class="form-row">
+        <div class="form-group">
+            <label class="form-label">Default URL</label>
+            <input type="url" class="form-input" id="set-kiosk-url" placeholder="https://example.com">
+        </div>
+        <div class="form-group" style="max-width:200px;">
+            <label class="form-label">Screenshot Interval (sec)</label>
+            <input type="number" class="form-input" id="set-screenshot-interval" placeholder="0 = disabled" min="0">
+        </div>
+    </div>
+    <div class="form-group">
+        <div class="toggle-wrap">
+            <label class="toggle">
+                <input type="checkbox" id="set-kiosk-devtools">
+                <span class="toggle-slider"></span>
+            </label>
+            <span>Enable DevTools by default</span>
+        </div>
+    </div>
+    <div class="form-group">
+        <div class="toggle-wrap">
+            <label class="toggle">
+                <input type="checkbox" id="set-kiosk-watchdog">
+                <span class="toggle-slider"></span>
+            </label>
+            <span>Enable Watchdog by default</span>
+        </div>
+    </div>
+</div>
+
+<button class="btn btn-primary btn-lg mt-4" onclick="saveSettings()">Save All Settings</button>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadSettings() {
+    api('/settings/api/all').then(data => {
+        $('#set-auth-enabled').checked = data.auth_enabled === '1';
+        $('#set-auth-pin').value = data.auth_pin || '';
+        $('#set-keyboard-enabled').checked = data.keyboard_enabled === '1';
+        $('#set-kiosk-url').value = data.kiosk_url || '';
+        $('#set-kiosk-devtools').checked = data.kiosk_devtools === '1';
+        $('#set-kiosk-watchdog').checked = data.kiosk_watchdog === '1';
+        $('#set-screenshot-interval').value = data.screenshot_interval || '0';
+    }).catch(err => Toast.error(err.message));
+}
+
+function saveSettings() {
+    const data = {
+        auth_enabled: $('#set-auth-enabled').checked ? '1' : '0',
+        auth_pin: $('#set-auth-pin').value,
+        keyboard_enabled: $('#set-keyboard-enabled').checked ? '1' : '0',
+        kiosk_url: $('#set-kiosk-url').value,
+        kiosk_devtools: $('#set-kiosk-devtools').checked ? '1' : '0',
+        kiosk_watchdog: $('#set-kiosk-watchdog').checked ? '1' : '0',
+        screenshot_interval: $('#set-screenshot-interval').value || '0',
+    };
+    api('/settings/api/update', { method: 'POST', body: data }).then(() => {
+        Toast.success('Settings saved successfully');
+    }).catch(err => Toast.error(err.message));
+}
+
+document.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+{% endblock %}

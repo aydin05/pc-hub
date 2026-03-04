@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Display - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Display &amp; Resolution</h1>
+    <p>View and change display resolution settings</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Connected Displays</div>
+        <button class="btn btn-outline btn-sm" onclick="loadDisplays()">Refresh</button>
+    </div>
+    <div id="displays-container">
+        <p class="text-muted">Loading...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadDisplays() {
+    api('/display/api/info').then(data => {
+        const container = $('#displays-container');
+        if (!data.displays.length) {
+            container.innerHTML = '<p class="text-muted">No displays detected. Is xrandr available?</p>';
+            return;
+        }
+        container.innerHTML = data.displays.map(d => `
+            <div class="card" style="margin-bottom:12px;background:var(--bg-tertiary);">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">${escapeHtml(d.name)}</div>
+                        <div class="card-subtitle">Current: ${escapeHtml(d.current || 'Unknown')}</div>
+                    </div>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group" style="flex:1;max-width:300px;">
+                        <select class="form-select" id="res-${escapeHtml(d.name)}">
+                            ${d.modes.map(m => `<option value="${m}" ${m === d.current ? 'selected' : ''}>${m}</option>`).join('')}
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="setResolution('${escapeHtml(d.name)}')">Apply</button>
+                </div>
+            </div>
+        `).join('');
+    }).catch(err => {
+        $('#displays-container').innerHTML = '<p class="text-danger">' + escapeHtml(err.message) + '</p>';
+    });
+}
+
+function setResolution(output) {
+    const mode = $(`#res-${output}`).value;
+    Modal.show('Change Resolution',
+        `Set <strong>${escapeHtml(output)}</strong> to <strong>${escapeHtml(mode)}</strong>?`,
+        () => {
+            api('/display/api/set', { method: 'POST', body: { output, mode } }).then(() => {
+                Toast.success('Resolution changed to ' + mode);
+                setTimeout(loadDisplays, 1000);
+            }).catch(err => Toast.error(err.message));
+        },
+        'Apply', 'btn-primary'
+    );
+}
+
+document.addEventListener('DOMContentLoaded', loadDisplays);
+</script>
+{% endblock %}

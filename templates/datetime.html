@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Date & Time - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Date &amp; Time</h1>
+    <p>Configure timezone, NTP, and system clock</p>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Current Time</div>
+        </div>
+        <div style="font-size:28px;font-weight:700;text-align:center;padding:16px 0;" id="live-clock">-</div>
+        <div class="table-wrap mt-4">
+            <table id="time-info">
+                <tr><td class="text-muted" style="width:180px;">Loading...</td><td></td></tr>
+            </table>
+        </div>
+        <button class="btn btn-outline btn-sm mt-4" onclick="loadTimeInfo()">Refresh</button>
+    </div>
+
+    <div class="card">
+        <div class="card-title mb-4">Timezone</div>
+        <div class="form-group">
+            <label class="form-label">Search Timezone</label>
+            <input type="text" class="form-input" id="tz-search" placeholder="Type to filter..." oninput="filterTimezones()">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Select Timezone</label>
+            <select class="form-select" id="tz-select" size="8" style="height:200px;overflow-y:auto;">
+                <option>Loading...</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" onclick="setTimezone()">Set Timezone</button>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card">
+        <div class="card-title mb-4">NTP Sync</div>
+        <div class="toggle-wrap mb-4">
+            <label class="toggle">
+                <input type="checkbox" id="ntp-toggle" onchange="setNtp()">
+                <span class="toggle-slider"></span>
+            </label>
+            <span>Enable NTP (automatic time sync)</span>
+        </div>
+        <p class="text-muted" style="font-size:12px;">When NTP is enabled, the system time is automatically synchronized with internet time servers.</p>
+    </div>
+
+    <div class="card">
+        <div class="card-title mb-4">Set Time Manually</div>
+        <p class="text-muted mb-4" style="font-size:12px;">NTP will be disabled when setting time manually.</p>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Date</label>
+                <input type="date" class="form-input" id="manual-date">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Time</label>
+                <input type="time" class="form-input" id="manual-time" step="1">
+            </div>
+        </div>
+        <button class="btn btn-warning" onclick="setManualTime()">Set Date &amp; Time</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allTimezones = [];
+
+function loadTimeInfo() {
+    api('/datetime/api/info').then(data => {
+        const table = $('#time-info');
+        table.innerHTML = Object.entries(data).map(([k, v]) =>
+            `<tr><td class="text-muted" style="width:180px;">${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`
+        ).join('');
+
+        const ntp = data['NTP service'] || data['NTP enabled'] || '';
+        $('#ntp-toggle').checked = ntp.toLowerCase().includes('active') || ntp.toLowerCase() === 'yes';
+    }).catch(() => {});
+}
+
+function loadTimezones() {
+    api('/datetime/api/timezones').then(data => {
+        allTimezones = data.timezones;
+        renderTimezones(allTimezones);
+    }).catch(() => {});
+}
+
+function renderTimezones(zones) {
+    const select = $('#tz-select');
+    select.innerHTML = zones.map(z => `<option value="${escapeHtml(z)}">${escapeHtml(z)}</option>`).join('');
+}
+
+function filterTimezones() {
+    const q = $('#tz-search').value.toLowerCase();
+    const filtered = allTimezones.filter(z => z.toLowerCase().includes(q));
+    renderTimezones(filtered);
+}
+
+function setTimezone() {
+    const tz = $('#tz-select').value;
+    if (!tz) return Toast.warning('Select a timezone');
+    api('/datetime/api/set-timezone', { method: 'POST', body: { timezone: tz } }).then(() => {
+        Toast.success('Timezone set to ' + tz);
+        loadTimeInfo();
+    }).catch(err => Toast.error(err.message));
+}
+
+function setNtp() {
+    const enabled = $('#ntp-toggle').checked;
+    api('/datetime/api/set-ntp', { method: 'POST', body: { enabled } }).then(() => {
+        Toast.success('NTP ' + (enabled ? 'enabled' : 'disabled'));
+        loadTimeInfo();
+    }).catch(err => Toast.error(err.message));
+}
+
+function setManualTime() {
+    const date = $('#manual-date').value;
+    const time = $('#manual-time').value;
+    if (!date || !time) return Toast.warning('Enter both date and time');
+    const datetime = date + ' ' + (time.length === 5 ? time + ':00' : time);
+
+    Modal.show('Set System Time',
+        `Set the system clock to <strong>${escapeHtml(datetime)}</strong>? NTP will be disabled.`,
+        () => {
+            api('/datetime/api/set-time', { method: 'POST', body: { datetime } }).then(() => {
+                Toast.success('System time updated');
+                loadTimeInfo();
+            }).catch(err => Toast.error(err.message));
+        },
+        'Set Time', 'btn-warning'
+    );
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    startClock('live-clock');
+    loadTimeInfo();
+    loadTimezones();
+});
+</script>
+{% endblock %}

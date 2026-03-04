@@ -1,0 +1,208 @@
+/* === Virtual On-Screen Keyboard === */
+(function() {
+    'use strict';
+
+    let activeInput = null;
+    let shifted = false;
+    let capsLock = false;
+    let keyboardEl = null;
+
+    const ROWS = [
+        ['`','1','2','3','4','5','6','7','8','9','0','-','=','Backspace'],
+        ['Tab','q','w','e','r','t','y','u','i','o','p','[',']','\\'],
+        ['Caps','a','s','d','f','g','h','j','k','l',';','\'','Enter'],
+        ['Shift','z','x','c','v','b','n','m',',','.','/','Shift'],
+        ['Space']
+    ];
+
+    const SHIFT_MAP = {
+        '`':'~','1':'!','2':'@','3':'#','4':'$','5':'%','6':'^','7':'&','8':'*','9':'(','0':')',
+        '-':'_','=':'+','[':'{',']':'}','\\':'|',';':':','\'':'"',',':'<','.':'>','/':'?'
+    };
+
+    function createKeyboard() {
+        if (keyboardEl) return;
+
+        keyboardEl = document.createElement('div');
+        keyboardEl.id = 'virtual-keyboard';
+        keyboardEl.style.cssText = `
+            position:fixed;bottom:0;left:0;right:0;z-index:3000;
+            background:#1a1d27;border-top:2px solid #2e3148;padding:8px;
+            display:none;box-shadow:0 -4px 24px rgba(0,0,0,0.5);
+            transition:transform 0.2s ease;
+        `;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        closeBtn.style.cssText = `
+            position:absolute;top:4px;right:12px;background:none;border:none;
+            color:#8b8fa8;font-size:18px;cursor:pointer;padding:4px 8px;z-index:1;
+        `;
+        closeBtn.addEventListener('click', hideKeyboard);
+        keyboardEl.appendChild(closeBtn);
+
+        ROWS.forEach(row => {
+            const rowEl = document.createElement('div');
+            rowEl.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;justify-content:center;';
+
+            row.forEach(key => {
+                const btn = document.createElement('button');
+                btn.className = 'vk-key';
+                btn.dataset.key = key;
+                btn.textContent = key;
+
+                let flex = '1';
+                let minW = '36px';
+                if (key === 'Space') { flex = '8'; minW = '200px'; btn.textContent = ''; }
+                else if (key === 'Backspace') { flex = '2'; minW = '70px'; }
+                else if (key === 'Enter') { flex = '2'; minW = '70px'; }
+                else if (key === 'Tab') { flex = '1.5'; minW = '55px'; }
+                else if (key === 'Caps') { flex = '1.8'; minW = '65px'; }
+                else if (key === 'Shift') { flex = '2.2'; minW = '80px'; }
+
+                btn.style.cssText = `
+                    flex:${flex};min-width:${minW};max-width:120px;height:42px;
+                    background:#242736;border:1px solid #2e3148;border-radius:6px;
+                    color:#e4e6f0;font-size:14px;font-family:inherit;cursor:pointer;
+                    display:flex;align-items:center;justify-content:center;
+                    transition:background 0.1s;user-select:none;
+                `;
+
+                btn.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    handleKey(key);
+                });
+
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    handleKey(key);
+                }, { passive: false });
+
+                rowEl.appendChild(btn);
+            });
+
+            keyboardEl.appendChild(rowEl);
+        });
+
+        document.body.appendChild(keyboardEl);
+
+        // Add hover styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .vk-key:hover,.vk-key:active{background:#3a3d50!important;}
+            .vk-key.active-key{background:#5b6abf!important;color:#fff!important;}
+        `;
+        document.head.appendChild(style);
+    }
+
+    function handleKey(key) {
+        if (!activeInput) return;
+
+        const start = activeInput.selectionStart;
+        const end = activeInput.selectionEnd;
+        const val = activeInput.value;
+
+        if (key === 'Backspace') {
+            if (start !== end) {
+                activeInput.value = val.slice(0, start) + val.slice(end);
+                activeInput.selectionStart = activeInput.selectionEnd = start;
+            } else if (start > 0) {
+                activeInput.value = val.slice(0, start - 1) + val.slice(end);
+                activeInput.selectionStart = activeInput.selectionEnd = start - 1;
+            }
+        } else if (key === 'Enter') {
+            if (activeInput.tagName === 'TEXTAREA') {
+                insertChar('\n');
+            } else {
+                const form = activeInput.closest('form');
+                if (form) form.dispatchEvent(new Event('submit'));
+                hideKeyboard();
+            }
+        } else if (key === 'Tab') {
+            insertChar('\t');
+        } else if (key === 'Space') {
+            insertChar(' ');
+        } else if (key === 'Caps') {
+            capsLock = !capsLock;
+            updateKeys();
+        } else if (key === 'Shift') {
+            shifted = !shifted;
+            updateKeys();
+        } else {
+            let ch = key;
+            if (shifted || capsLock) {
+                if (SHIFT_MAP[key]) {
+                    ch = shifted ? SHIFT_MAP[key] : key;
+                } else {
+                    ch = (shifted !== capsLock) ? key.toUpperCase() : key.toLowerCase();
+                }
+            }
+            insertChar(ch);
+            if (shifted) {
+                shifted = false;
+                updateKeys();
+            }
+        }
+
+        activeInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function insertChar(ch) {
+        if (!activeInput) return;
+        const start = activeInput.selectionStart;
+        const end = activeInput.selectionEnd;
+        const val = activeInput.value;
+        activeInput.value = val.slice(0, start) + ch + val.slice(end);
+        activeInput.selectionStart = activeInput.selectionEnd = start + ch.length;
+    }
+
+    function updateKeys() {
+        if (!keyboardEl) return;
+        keyboardEl.querySelectorAll('.vk-key').forEach(btn => {
+            const key = btn.dataset.key;
+            if (key === 'Caps') {
+                btn.classList.toggle('active-key', capsLock);
+            } else if (key === 'Shift') {
+                btn.classList.toggle('active-key', shifted);
+            } else if (key.length === 1) {
+                if (shifted && SHIFT_MAP[key]) {
+                    btn.textContent = SHIFT_MAP[key];
+                } else if (shifted !== capsLock && key.match(/[a-z]/)) {
+                    btn.textContent = key.toUpperCase();
+                } else {
+                    btn.textContent = key;
+                }
+            }
+        });
+    }
+
+    function showKeyboard() {
+        createKeyboard();
+        keyboardEl.style.display = '';
+    }
+
+    function hideKeyboard() {
+        if (keyboardEl) keyboardEl.style.display = 'none';
+        activeInput = null;
+    }
+
+    // Attach to all inputs and textareas
+    document.addEventListener('focusin', (e) => {
+        const tag = e.target.tagName;
+        const type = (e.target.type || '').toLowerCase();
+        if ((tag === 'INPUT' && !['checkbox','radio','submit','button','file','hidden','range','color'].includes(type)) || tag === 'TEXTAREA') {
+            activeInput = e.target;
+            showKeyboard();
+        }
+    });
+
+    document.addEventListener('focusout', (e) => {
+        // Small delay to allow clicking keyboard buttons
+        setTimeout(() => {
+            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
+            // Don't hide if the keyboard itself was clicked
+            if (keyboardEl && keyboardEl.contains(document.activeElement)) return;
+        }, 200);
+    });
+
+})();

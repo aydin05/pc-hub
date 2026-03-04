@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Network Configuration - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Network Configuration</h1>
+    <p>View and configure network interfaces, DNS, and hostname</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Network Interfaces</div>
+        <button class="btn btn-outline btn-sm" onclick="loadInterfaces()">Refresh</button>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Interface</th>
+                    <th>Status</th>
+                    <th>IP Address</th>
+                    <th>MAC Address</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="iface-table">
+                <tr><td colspan="5" class="text-muted" style="text-align:center;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="grid grid-2">
+    <div class="card" id="config-panel" style="display:none;">
+        <div class="card-header">
+            <div class="card-title">Configure: <span id="config-iface-name"></span></div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Method</label>
+            <select class="form-select" id="config-method" onchange="toggleStaticFields()">
+                <option value="dhcp">DHCP (Automatic)</option>
+                <option value="static">Static IP</option>
+            </select>
+        </div>
+        <div id="static-fields" style="display:none;">
+            <div class="form-group">
+                <label class="form-label">IP Address / CIDR</label>
+                <input type="text" class="form-input" id="config-ip" placeholder="192.168.1.100/24">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Gateway</label>
+                <input type="text" class="form-input" id="config-gateway" placeholder="192.168.1.1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">DNS Servers (comma separated)</label>
+                <input type="text" class="form-input" id="config-dns" placeholder="8.8.8.8, 8.8.4.4">
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="applyConfig()">Apply Configuration</button>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Hostname</div>
+        </div>
+        <div class="form-inline">
+            <div class="form-group" style="flex:1;">
+                <input type="text" class="form-input" id="hostname-input" placeholder="kiosk-01">
+            </div>
+            <button class="btn btn-primary" onclick="setHostname()">Set Hostname</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentIface = '';
+
+function loadInterfaces() {
+    api('/network/api/interfaces').then(data => {
+        const tbody = $('#iface-table');
+        if (!data.interfaces.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;">No interfaces found</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.interfaces.map(i => `
+            <tr>
+                <td><strong>${escapeHtml(i.name)}</strong></td>
+                <td><span class="badge badge-${i.state === 'UP' ? 'success' : 'danger'}"><span class="badge-dot"></span>${i.state}</span></td>
+                <td>${escapeHtml(i.ip || 'N/A')}</td>
+                <td><code>${escapeHtml(i.mac || 'N/A')}</code></td>
+                <td><button class="btn btn-outline btn-sm" onclick="configureIface('${escapeHtml(i.name)}')">Configure</button></td>
+            </tr>
+        `).join('');
+    }).catch(err => Toast.error(err.message));
+}
+
+function configureIface(name) {
+    currentIface = name;
+    $('#config-iface-name').textContent = name;
+    $('#config-panel').style.display = '';
+    $('#config-method').value = 'dhcp';
+    toggleStaticFields();
+}
+
+function toggleStaticFields() {
+    $('#static-fields').style.display = $('#config-method').value === 'static' ? '' : 'none';
+}
+
+function applyConfig() {
+    const data = {
+        interface: currentIface,
+        method: $('#config-method').value,
+    };
+    if (data.method === 'static') {
+        data.ip = $('#config-ip').value;
+        data.gateway = $('#config-gateway').value;
+        data.dns = $('#config-dns').value;
+    }
+    Modal.show('Apply Network Configuration',
+        'This will modify the network settings for <strong>' + escapeHtml(currentIface) + '</strong>. The connection may be briefly interrupted.',
+        () => {
+            api('/network/api/configure', { method: 'POST', body: data }).then(() => {
+                Toast.success('Network configuration applied');
+                setTimeout(loadInterfaces, 2000);
+            }).catch(err => Toast.error(err.message));
+        },
+        'Apply', 'btn-warning'
+    );
+}
+
+function setHostname() {
+    const hostname = $('#hostname-input').value.trim();
+    if (!hostname) return Toast.warning('Enter a hostname');
+    api('/network/api/hostname', { method: 'POST', body: { hostname } }).then(() => {
+        Toast.success('Hostname set to: ' + hostname);
+    }).catch(err => Toast.error(err.message));
+}
+
+document.addEventListener('DOMContentLoaded', loadInterfaces);
+</script>
+{% endblock %}

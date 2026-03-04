@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Network Diagnostics - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Network Diagnostics</h1>
+    <p>Ping, TCP port check, and port scanner tools</p>
+</div>
+
+<div class="grid grid-2">
+    <!-- Ping Tool -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Ping</div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Host</label>
+                <input type="text" class="form-input" id="ping-host" placeholder="8.8.8.8">
+            </div>
+            <div class="form-group" style="max-width:100px;">
+                <label class="form-label">Count</label>
+                <input type="number" class="form-input" id="ping-count" value="4" min="1" max="20">
+            </div>
+        </div>
+        <button class="btn btn-primary mb-4" onclick="startPing()">Run Ping</button>
+        <div class="terminal" id="ping-output" style="min-height:120px;"></div>
+    </div>
+
+    <!-- TCP Check -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">TCP Port Check</div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Host</label>
+                <input type="text" class="form-input" id="tcp-host" placeholder="example.com">
+            </div>
+            <div class="form-group" style="max-width:120px;">
+                <label class="form-label">Port</label>
+                <input type="number" class="form-input" id="tcp-port" placeholder="443">
+            </div>
+        </div>
+        <button class="btn btn-primary mb-4" onclick="tcpCheck()">Check Port</button>
+        <div id="tcp-result" class="mt-2"></div>
+    </div>
+</div>
+
+<!-- Port Scanner -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Port Scanner</div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label class="form-label">Host</label>
+            <input type="text" class="form-input" id="scan-host" placeholder="192.168.1.1">
+        </div>
+        <div class="form-group" style="max-width:120px;">
+            <label class="form-label">Start Port</label>
+            <input type="number" class="form-input" id="scan-start" value="1">
+        </div>
+        <div class="form-group" style="max-width:120px;">
+            <label class="form-label">End Port</label>
+            <input type="number" class="form-input" id="scan-end" value="1024">
+        </div>
+    </div>
+    <button class="btn btn-primary mb-4" id="scan-btn" onclick="startScan()">Start Scan</button>
+    <div class="progress-bar mb-4" id="scan-progress-wrap" style="display:none;">
+        <div class="progress-fill" id="scan-progress" style="width:0%"></div>
+    </div>
+    <div class="table-wrap" id="scan-results" style="display:none;">
+        <table>
+            <thead><tr><th>Port</th><th>Status</th><th>Service</th></tr></thead>
+            <tbody id="scan-table"></tbody>
+        </table>
+    </div>
+    <p class="text-muted mt-2" id="scan-status"></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let pingSource = null;
+let scanSource = null;
+
+function startPing() {
+    const host = $('#ping-host').value.trim();
+    const count = $('#ping-count').value;
+    if (!host) return Toast.warning('Enter a host');
+
+    const terminal = $('#ping-output');
+    terminal.textContent = '';
+
+    if (pingSource) pingSource.close();
+    pingSource = streamSSE(`/diagnostics/api/ping?host=${encodeURIComponent(host)}&count=${count}`, {
+        onMessage: (line) => appendTerminal(terminal, line),
+        onDone: () => appendTerminal(terminal, '--- Ping complete ---'),
+        onError: () => appendTerminal(terminal, '[ERROR] Connection lost'),
+    });
+}
+
+function tcpCheck() {
+    const host = $('#tcp-host').value.trim();
+    const port = $('#tcp-port').value;
+    if (!host || !port) return Toast.warning('Enter host and port');
+
+    $('#tcp-result').innerHTML = '<span class="text-muted">Checking...</span>';
+
+    api('/diagnostics/api/tcpcheck', { method: 'POST', body: { host, port: parseInt(port) } }).then(data => {
+        const colors = { open: 'success', closed: 'danger', timeout: 'warning' };
+        $('#tcp-result').innerHTML = `
+            <span class="badge badge-${colors[data.status] || 'info'}">
+                ${escapeHtml(data.host)}:${data.port} &mdash; ${data.status.toUpperCase()}
+            </span>
+        `;
+    }).catch(err => {
+        $('#tcp-result').innerHTML = `<span class="text-danger">${escapeHtml(err.message)}</span>`;
+    });
+}
+
+function startScan() {
+    const host = $('#scan-host').value.trim();
+    const start = $('#scan-start').value;
+    const end = $('#scan-end').value;
+    if (!host) return Toast.warning('Enter a host');
+
+    $('#scan-results').style.display = '';
+    $('#scan-progress-wrap').style.display = '';
+    $('#scan-table').innerHTML = '';
+    $('#scan-progress').style.width = '0%';
+    $('#scan-status').textContent = 'Scanning...';
+    $('#scan-btn').disabled = true;
+
+    if (scanSource) scanSource.close();
+    scanSource = streamSSE(
+        `/diagnostics/api/portscan?host=${encodeURIComponent(host)}&start=${start}&end=${end}`,
+        {
+            onMessage: (line) => {
+                try {
+                    const data = JSON.parse(line);
+                    if (data.type === 'result') {
+                        $('#scan-table').innerHTML += `
+                            <tr>
+                                <td>${data.port}</td>
+                                <td><span class="badge badge-success">OPEN</span></td>
+                                <td>${escapeHtml(data.service || '-')}</td>
+                            </tr>
+                        `;
+                    } else if (data.type === 'progress') {
+                        $('#scan-progress').style.width = data.percent + '%';
+                        $('#scan-status').textContent = 'Scanning port ' + data.current + '...';
+                    }
+                } catch(e) {}
+            },
+            onDone: () => {
+                $('#scan-progress').style.width = '100%';
+                $('#scan-status').textContent = 'Scan complete.';
+                $('#scan-btn').disabled = false;
+                const rows = $('#scan-table').querySelectorAll('tr');
+                if (!rows.length) {
+                    $('#scan-table').innerHTML = '<tr><td colspan="3" class="text-muted" style="text-align:center;">No open ports found</td></tr>';
+                }
+            },
+            onError: () => {
+                $('#scan-status').textContent = 'Scan interrupted.';
+                $('#scan-btn').disabled = false;
+            },
+        }
+    );
+}
+</script>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Update - Kiosk Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Update</h1>
+    <p>Check for and apply application updates from Git</p>
+</div>
+
+<div class="grid grid-3">
+    <div class="stat-card">
+        <div class="stat-label">Current Version</div>
+        <div class="stat-value" id="update-version">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Git Branch</div>
+        <div class="stat-value" id="update-branch">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Latest Commit</div>
+        <div class="stat-value" id="update-commit" style="font-size:14px;">-</div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="card-title">Update Manager</div>
+    </div>
+    <div class="btn-group mb-4">
+        <button class="btn btn-outline" onclick="checkUpdates()">Check for Updates</button>
+        <button class="btn btn-primary" id="pull-btn" onclick="pullUpdate()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Pull Update
+        </button>
+    </div>
+    <div id="update-status" class="mb-4"></div>
+    <div class="terminal" id="update-output" style="min-height:150px;display:none;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadUpdateInfo() {
+    api('/update/api/info').then(data => {
+        $('#update-version').textContent = 'v' + (data.version || '?');
+        $('#update-branch').textContent = data.git.branch || 'N/A';
+        $('#update-commit').textContent = data.git.commit || 'N/A';
+    }).catch(() => {});
+}
+
+function checkUpdates() {
+    $('#update-status').innerHTML = '<span class="text-muted">Checking for updates...</span>';
+    api('/update/api/check', { method: 'POST' }).then(data => {
+        if (data.updates_available) {
+            $('#update-status').innerHTML = '<span class="badge badge-success">Updates available</span><pre class="terminal mt-2" style="max-height:150px;">' + escapeHtml(data.commits) + '</pre>';
+        } else {
+            $('#update-status').innerHTML = '<span class="badge badge-info">Up to date</span>';
+        }
+    }).catch(err => {
+        $('#update-status').innerHTML = '<span class="text-danger">' + escapeHtml(err.message) + '</span>';
+    });
+}
+
+function pullUpdate() {
+    const terminal = $('#update-output');
+    terminal.style.display = '';
+    terminal.textContent = '';
+    $('#pull-btn').disabled = true;
+
+    streamSSE('/update/api/pull', {
+        onMessage: (line) => appendTerminal(terminal, line),
+        onDone: (line) => {
+            appendTerminal(terminal, line || 'Update process finished.');
+            $('#pull-btn').disabled = false;
+            loadUpdateInfo();
+        },
+        onError: () => {
+            appendTerminal(terminal, '[ERROR] Connection lost');
+            $('#pull-btn').disabled = false;
+        },
+    });
+}
+
+document.addEventListener('DOMContentLoaded', loadUpdateInfo);
+</script>
+{% endblock %}
