@@ -394,3 +394,10 @@ echo -e "    Status:   ${YELLOW}sudo systemctl status kiosk-manager${NC}"
 echo -e "    Logs:     ${YELLOW}sudo journalctl -u kiosk-manager -f${NC}"
 echo -e "    Restart:  ${YELLOW}sudo systemctl restart kiosk-manager${NC}"
 echo ""
+if [ "$HEADLESS" = true ]; then
+    echo -e "  ${CYAN}Want Chrome kiosk mode?${NC}"
+    echo -e "    Run: ${YELLOW}sudo bash $INSTALL_DIR/deploy/setup-kiosk-display.sh${NC}"
+    echo -e "    This installs X11 + Openbox + auto-login + Chrome autostart"
+    echo -e "    Then reboot and Chrome will launch in kiosk mode"
+    echo ""
+fi
