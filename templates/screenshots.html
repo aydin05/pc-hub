@@ -3,24 +3,36 @@
 {% block content %}
 <div class="page-header">
     <h1>Screenshots</h1>
-    <p>Capture and manage screen captures</p>
+    <p>Capture a screenshot of the current display</p>
 </div>
 
 <div class="card">
     <div class="card-header">
-        <div class="card-title">Capture</div>
+        <div class="card-title">Screen Capture</div>
     </div>
     <div class="btn-group">
         <button class="btn btn-primary" id="capture-btn" onclick="captureScreenshot()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
             Take Screenshot
         </button>
-        <button class="btn btn-outline" onclick="loadScreenshots()">Refresh List</button>
     </div>
 </div>
 
-<div class="screenshot-grid mt-4" id="screenshot-grid">
-    <p class="text-muted">Loading...</p>
+<div class="card mt-4" id="screenshot-card" style="display:none;">
+    <div class="card-header">
+        <div class="card-title" id="screenshot-title">Latest Screenshot</div>
+        <a id="screenshot-download" href="#" class="btn btn-ghost btn-sm" title="Download">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download
+        </a>
+    </div>
+    <div style="text-align:center;padding:8px;">
+        <img id="screenshot-img" src="" alt="Screenshot" style="max-width:100%;border-radius:var(--radius-lg);border:1px solid var(--border-color);">
+    </div>
+</div>
+
+<div id="screenshot-empty" class="card mt-4" style="text-align:center;padding:32px;">
+    <p class="text-muted">No screenshots yet. Click "Take Screenshot" to capture one.</p>
 </div>
 {% endblock %}
 
@@ -32,8 +44,8 @@ function captureScreenshot() {
     btn.textContent = 'Capturing...';
 
     api('/screenshots/api/capture', { method: 'POST' }).then(data => {
-        Toast.success('Screenshot captured: ' + data.filename);
-        loadScreenshots();
+        Toast.success('Screenshot captured');
+        showScreenshot(data.filename);
     }).catch(err => {
         Toast.error(err.message);
     }).finally(() => {
@@ -42,43 +54,26 @@ function captureScreenshot() {
     });
 }
 
-function loadScreenshots() {
+function showScreenshot(filename) {
+    const card = $('#screenshot-card');
+    const img = $('#screenshot-img');
+    const dl = $('#screenshot-download');
+    const empty = $('#screenshot-empty');
+
+    img.src = '/screenshots/api/view/' + encodeURIComponent(filename) + '?t=' + Date.now();
+    dl.href = '/screenshots/api/download/' + encodeURIComponent(filename);
+    card.style.display = '';
+    empty.style.display = 'none';
+}
+
+function loadLatest() {
     api('/screenshots/api/list').then(data => {
-        const grid = $('#screenshot-grid');
-        if (!data.screenshots.length) {
-            grid.innerHTML = '<p class="text-muted">No screenshots yet. Click "Take Screenshot" to capture one.</p>';
-            return;
+        if (data.screenshots.length) {
+            showScreenshot(data.screenshots[0].filename);
         }
-        grid.innerHTML = data.screenshots.map(s => `
-            <div class="screenshot-card">
-                <img src="/screenshots/api/view/${encodeURIComponent(s.filename)}" alt="Screenshot" onclick="window.open(this.src, '_blank')">
-                <div class="screenshot-card-body">
-                    <small>${escapeHtml(s.created_at)}</small>
-                    <div class="btn-group">
-                        <a href="/screenshots/api/download/${encodeURIComponent(s.filename)}" class="btn btn-ghost btn-sm" title="Download">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        </a>
-                        <button class="btn btn-ghost btn-sm" onclick="deleteScreenshot(${s.id})" title="Delete">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    }).catch(err => {
-        $('#screenshot-grid').innerHTML = '<p class="text-danger">' + escapeHtml(err.message) + '</p>';
-    });
+    }).catch(() => {});
 }
 
-function deleteScreenshot(id) {
-    Modal.show('Delete Screenshot', 'Are you sure you want to delete this screenshot?', () => {
-        api('/screenshots/api/delete/' + id, { method: 'DELETE' }).then(() => {
-            Toast.success('Screenshot deleted');
-            loadScreenshots();
-        }).catch(err => Toast.error(err.message));
-    });
-}
-
-document.addEventListener('DOMContentLoaded', loadScreenshots);
+document.addEventListener('DOMContentLoaded', loadLatest);
 </script>
 {% endblock %}

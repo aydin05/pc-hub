@@ -8,10 +8,11 @@
     let keyboardEl = null;
 
     const ROWS = [
+        ['https://','http://','touchScreen?','graphicalDisplay?','unitId=','Intro17','Cinematic'],
         ['`','1','2','3','4','5','6','7','8','9','0','-','=','Backspace'],
         ['Tab','q','w','e','r','t','y','u','i','o','p','[',']','\\'],
         ['Caps','a','s','d','f','g','h','j','k','l',';','\'','Enter'],
-        ['Shift','z','x','c','v','b','n','m',',','.','/','Shift'],
+        ['Shift','z','x','c','v','b','n','m',',','.','/',  '?','Shift'],
         ['Space']
     ];
 
@@ -53,19 +54,26 @@
 
                 let flex = '1';
                 let minW = '36px';
+                const isShortcut = key.length > 1 && !['Backspace','Enter','Tab','Space','Caps','Shift'].includes(key);
                 if (key === 'Space') { flex = '8'; minW = '200px'; btn.textContent = ''; }
                 else if (key === 'Backspace') { flex = '2'; minW = '70px'; }
                 else if (key === 'Enter') { flex = '2'; minW = '70px'; }
                 else if (key === 'Tab') { flex = '1.5'; minW = '55px'; }
                 else if (key === 'Caps') { flex = '1.8'; minW = '65px'; }
                 else if (key === 'Shift') { flex = '2.2'; minW = '80px'; }
+                else if (isShortcut) { flex = '1'; minW = 'auto'; }
+
+                const maxW = isShortcut ? '180px' : '120px';
+                const fontSize = isShortcut ? '11px' : '14px';
+                const pad = isShortcut ? '0 8px' : '0';
+                const bg = isShortcut ? '#2a3050' : '#242736';
 
                 btn.style.cssText = `
-                    flex:${flex};min-width:${minW};max-width:120px;height:42px;
-                    background:#242736;border:1px solid #2e3148;border-radius:6px;
-                    color:#e4e6f0;font-size:14px;font-family:inherit;cursor:pointer;
-                    display:flex;align-items:center;justify-content:center;
-                    transition:background 0.1s;user-select:none;
+                    flex:${flex};min-width:${minW};max-width:${maxW};height:42px;
+                    background:${bg};border:1px solid #2e3148;border-radius:6px;
+                    color:#e4e6f0;font-size:${fontSize};font-family:inherit;cursor:pointer;
+                    display:flex;align-items:center;justify-content:center;padding:${pad};
+                    transition:background 0.1s;user-select:none;white-space:nowrap;
                 `;
 
                 btn.addEventListener('mousedown', (e) => {
@@ -128,6 +136,9 @@
         } else if (key === 'Shift') {
             shifted = !shifted;
             updateKeys();
+        } else if (key.length > 1 && !['Backspace','Enter','Tab','Space','Caps','Shift'].includes(key)) {
+            // Multi-character shortcut key — insert the whole string
+            insertChar(key);
         } else {
             let ch = key;
             if (shifted || capsLock) {

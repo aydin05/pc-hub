@@ -134,7 +134,7 @@ sleep 2
 
 # Build Chrome flags
 CHROME_FLAGS=(
-    --kiosk
+    --start-fullscreen
     --noerrdialogs
     --disable-infobars
     --no-first-run
@@ -142,6 +142,8 @@ CHROME_FLAGS=(
     --disable-features=TranslateUI
     --disable-translate
     --check-for-update-interval=31536000
+    --remote-debugging-port=9222
+    --remote-debugging-address=0.0.0.0
 )
 
 # Running as root requires --no-sandbox

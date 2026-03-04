@@ -44,21 +44,37 @@
         <div class="form-group">
             <div class="toggle-wrap">
                 <label class="toggle">
-                    <input type="checkbox" id="kiosk-devtools" {{ 'checked' if settings.devtools == '1' }}>
-                    <span class="toggle-slider"></span>
-                </label>
-                <span>Enable Remote DevTools (port 9222)</span>
-            </div>
-        </div>
-        <div class="form-group">
-            <div class="toggle-wrap">
-                <label class="toggle">
                     <input type="checkbox" id="kiosk-watchdog" {{ 'checked' if settings.watchdog == '1' }}>
                     <span class="toggle-slider"></span>
                 </label>
                 <span>Watchdog (auto-restart on crash)</span>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Remote Debugging</div>
+        </div>
+        <p style="color:var(--text-secondary);margin-bottom:12px;">Chrome DevTools remote debugging is enabled on port <strong>9222</strong>.</p>
+        <p style="margin-bottom:12px;">Open this URL in Chrome on your computer:</p>
+        <div class="form-group">
+            <input type="text" class="form-input" id="devtools-url" readonly style="font-family:monospace;font-size:13px;">
+        </div>
+        <a id="devtools-link" href="#" target="_blank" class="btn btn-outline">Open DevTools</a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Exit Fullscreen</div>
+        </div>
+        <p style="color:var(--text-secondary);margin-bottom:12px;">To exit fullscreen on the kiosk display:</p>
+        <ul style="color:var(--text-secondary);line-height:2;padding-left:20px;margin-bottom:12px;">
+            <li>Press <strong>F11</strong> on the keyboard</li>
+            <li>Or click <strong>Kill</strong> above to close Chrome</li>
+        </ul>
     </div>
 </div>
 {% endblock %}
@@ -90,7 +106,6 @@ function kioskAction(action) {
 function saveKioskSettings() {
     const data = {
         url: $('#kiosk-url').value,
-        devtools: $('#kiosk-devtools').checked,
         watchdog: $('#kiosk-watchdog').checked,
     };
     api('/kiosk/api/settings', { method: 'POST', body: data }).then(() => {
@@ -101,6 +116,14 @@ function saveKioskSettings() {
 document.addEventListener('DOMContentLoaded', () => {
     refreshStatus();
     setInterval(refreshStatus, 10000);
+
+    // Populate devtools URL
+    const host = location.hostname;
+    const devtoolsUrl = 'http://' + host + ':9222';
+    const dtInput = $('#devtools-url');
+    const dtLink = $('#devtools-link');
+    if (dtInput) dtInput.value = devtoolsUrl;
+    if (dtLink) dtLink.href = devtoolsUrl;
 });
 </script>
 {% endblock %}
