@@ -135,6 +135,7 @@ def kiosk_page():
         'url': get_setting('kiosk_url', 'https://www.google.com'),
         'devtools': get_setting('kiosk_devtools', '0'),
         'watchdog': get_setting('kiosk_watchdog', '1'),
+        'cursor': get_setting('kiosk_cursor', '1'),
     }
     return render_template('kiosk.html', settings=settings)
 
@@ -188,6 +189,28 @@ def kill():
     return jsonify({'success': True})
 
 
+def _apply_cursor_setting(show_cursor):
+    """Show or hide the cursor on the display."""
+    env = get_sys().get_env_with_display()
+    try:
+        if show_cursor:
+            # Kill unclutter to show cursor
+            subprocess.run(['pkill', '-f', 'unclutter'], timeout=5,
+                           capture_output=True)
+            logger.info('Cursor enabled (unclutter killed)')
+        else:
+            # Kill any existing unclutter first, then restart
+            subprocess.run(['pkill', '-f', 'unclutter'], timeout=5,
+                           capture_output=True)
+            time.sleep(0.5)
+            subprocess.Popen(['unclutter', '-idle', '0', '-root'],
+                             env=env, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            logger.info('Cursor hidden (unclutter started with idle=0)')
+    except Exception as e:
+        logger.warning('Could not apply cursor setting: %s', e)
+
+
 def _write_kiosk_url_file(url):
     """Write the kiosk URL to ~/.kiosk-url so .xinitrc picks it up."""
     try:
@@ -197,6 +220,16 @@ def _write_kiosk_url_file(url):
         logger.info('Wrote kiosk URL to %s', url_file)
     except Exception as e:
         logger.warning('Could not write ~/.kiosk-url: %s', e)
+
+
+@kiosk_bp.route('/api/cursor', methods=['POST'])
+def cursor_toggle():
+    """Toggle cursor visibility — accessible without auth for login screen shortcuts."""
+    data = request.get_json() or {}
+    show = data.get('show', True)
+    set_setting('kiosk_cursor', '1' if show else '0')
+    _apply_cursor_setting(show)
+    return jsonify({'success': True, 'cursor': show})
 
 
 @kiosk_bp.route('/api/settings', methods=['POST'])
@@ -209,8 +242,10 @@ def update_settings():
             return jsonify({'error': 'URL must start with http:// or https://'}), 400
         set_setting('kiosk_url', url)
         _write_kiosk_url_file(url)
-    if 'devtools' in data:
-        set_setting('kiosk_devtools', '1' if data['devtools'] else '0')
+    if 'cursor' in data:
+        enabled = bool(data['cursor'])
+        set_setting('kiosk_cursor', '1' if enabled else '0')
+        _apply_cursor_setting(enabled)
     if 'watchdog' in data:
         global _watchdog_running, _watchdog_thread
         enabled = bool(data['watchdog'])

@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Kiosk Manager</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .mode-toast {
+            position:fixed;top:24px;left:50%;transform:translateX(-50%);
+            padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;
+            color:#fff;z-index:9999;opacity:0;transition:opacity 0.3s;
+            pointer-events:none;
+        }
+        .mode-toast.show { opacity:1; }
+        .mode-toast.cursor { background:#22c55e; }
+        .mode-toast.touch { background:#3b82f6; }
+    </style>
 </head>
 <body>
     <div class="login-container">
@@ -27,5 +38,52 @@
             </form>
         </div>
     </div>
+    <div class="mode-toast" id="mode-toast"></div>
+    <script>
+    (function() {
+        const toast = document.getElementById('mode-toast');
+        let toastTimer = null;
+
+        function showToast(msg, cls) {
+            toast.textContent = msg;
+            toast.className = 'mode-toast ' + cls + ' show';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 2000);
+        }
+
+        function setCursor(show) {
+            fetch('/kiosk/api/cursor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ show: show })
+            }).catch(() => {});
+        }
+
+        document.addEventListener('keydown', function(e) {
+            const pinInput = document.querySelector('.pin-input');
+            const isFocused = document.activeElement === pinInput;
+
+            if (e.key === 'w' || e.key === 'W') {
+                if (isFocused) { pinInput.blur(); }
+                e.preventDefault();
+                setCursor(true);
+                showToast('Cursor Mode — cursor visible', 'cursor');
+                return;
+            }
+            if (e.key === 'q' || e.key === 'Q') {
+                if (isFocused) { pinInput.blur(); }
+                e.preventDefault();
+                setCursor(false);
+                showToast('Touchscreen Mode — cursor hidden', 'touch');
+                return;
+            }
+
+            // Any other key: focus the PIN input so they can type
+            if (!isFocused && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                pinInput.focus();
+            }
+        });
+    })();
+    </script>
 </body>
 </html>
