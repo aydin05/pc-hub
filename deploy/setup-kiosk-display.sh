@@ -188,10 +188,13 @@ header "Step 4/5 — Auto-start X on login"
 # Add startx to .bash_profile so X starts automatically on tty1 login
 BASH_PROFILE="$KIOSK_HOME/.bash_profile"
 
-# Remove any existing startx lines to avoid duplicates
+# Remove any existing kiosk auto-start block to avoid duplicates
 if [ -f "$BASH_PROFILE" ]; then
-    grep -v 'startx' "$BASH_PROFILE" > "$BASH_PROFILE.tmp" 2>/dev/null || true
-    mv "$BASH_PROFILE.tmp" "$BASH_PROFILE"
+    sed -i '/# Auto-start X11 on tty1/,/^fi$/d' "$BASH_PROFILE" 2>/dev/null || true
+    # Also clean up any stray startx lines
+    sed -i '/exec startx/d' "$BASH_PROFILE" 2>/dev/null || true
+    # Remove trailing blank lines
+    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$BASH_PROFILE" 2>/dev/null || true
 fi
 
 cat >> "$BASH_PROFILE" <<'PROFILE'
