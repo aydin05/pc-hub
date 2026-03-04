@@ -126,6 +126,11 @@ def _kill_chromium():
 @kiosk_bp.route('/')
 @login_required
 def kiosk_page():
+    sys = get_sys()
+    if sys.is_headless:
+        return render_template('headless.html',
+                               feature='Chrome Kiosk',
+                               reason='No display server detected (headless mode).')
     settings = {
         'url': get_setting('kiosk_url', 'https://www.google.com'),
         'devtools': get_setting('kiosk_devtools', '0'),
@@ -142,6 +147,8 @@ def error_page():
 @kiosk_bp.route('/api/status')
 @login_required
 def status():
+    if get_sys().is_headless:
+        return jsonify({'running': False, 'pid': None, 'headless': True, 'error': 'No display server available'})
     pid = _get_kiosk_pid()
     return jsonify({
         'running': pid is not None,
@@ -154,6 +161,8 @@ def status():
 @kiosk_bp.route('/api/launch', methods=['POST'])
 @login_required
 def launch():
+    if get_sys().is_headless:
+        return jsonify({'error': 'Cannot launch kiosk in headless mode (no display server)'}), 400
     pid = _get_kiosk_pid()
     if pid:
         return jsonify({'error': 'Chromium is already running', 'pid': pid}), 400
@@ -164,6 +173,8 @@ def launch():
 @kiosk_bp.route('/api/restart', methods=['POST'])
 @login_required
 def restart():
+    if get_sys().is_headless:
+        return jsonify({'error': 'Cannot restart kiosk in headless mode (no display server)'}), 400
     _kill_chromium()
     time.sleep(1)
     new_pid = _launch_chromium()

@@ -61,15 +61,32 @@ elif command -v pacman &>/dev/null; then
 fi
 
 # Detect display server
+HEADLESS=true
 if [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     DISPLAY_SERVER="wayland"
+    HEADLESS=false
 elif [ -n "$DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "x11" ]; then
     DISPLAY_SERVER="x11"
+    HEADLESS=false
+else
+    # Check if any display manager is installed even if not currently in a session
+    if command -v Xorg &>/dev/null || command -v Xwayland &>/dev/null || \
+       systemctl is-active display-manager &>/dev/null 2>&1 || \
+       [ -d /usr/share/xsessions ] || [ -d /usr/share/wayland-sessions ]; then
+        HEADLESS=false
+        # Guess x11 as default when display manager exists but session type unknown
+        DISPLAY_SERVER="x11"
+    fi
 fi
 
 log "Distro:          $DISTRO (${PRETTY_NAME:-$DISTRO})"
 log "Package manager: $PKG_MGR"
-log "Display server:  $DISPLAY_SERVER"
+if [ "$HEADLESS" = true ]; then
+    log "Display server:  ${YELLOW}none (headless mode)${NC}"
+    warn "Headless mode: Kiosk, Display, and Screenshot features will be disabled"
+else
+    log "Display server:  $DISPLAY_SERVER"
+fi
 log "Installing as:   $SERVICE_USER"
 log "Install dir:     $INSTALL_DIR"
 log "Port:            $PORT"
@@ -88,46 +105,59 @@ install_packages() {
         apt)
             apt-get update -qq
             apt-get install -y python3 python3-pip python3-venv git sqlite3 curl
-            # Screenshot tool
-            if [ "$DISPLAY_SERVER" = "wayland" ]; then
-                apt-get install -y grim 2>/dev/null || apt-get install -y gnome-screenshot 2>/dev/null || true
-            else
-                apt-get install -y scrot 2>/dev/null || apt-get install -y gnome-screenshot 2>/dev/null || true
-            fi
-            # Display tool
-            if [ "$DISPLAY_SERVER" = "wayland" ]; then
-                apt-get install -y wlr-randr 2>/dev/null || true
-            else
-                apt-get install -y x11-xserver-utils 2>/dev/null || true  # provides xrandr
-            fi
             # Network
             apt-get install -y network-manager 2>/dev/null || true
-            # Browser
-            apt-get install -y chromium-browser 2>/dev/null || apt-get install -y chromium 2>/dev/null || true
+            # Display-dependent packages (skip in headless mode)
+            if [ "$HEADLESS" = false ]; then
+                # Screenshot tool
+                if [ "$DISPLAY_SERVER" = "wayland" ]; then
+                    apt-get install -y grim 2>/dev/null || apt-get install -y gnome-screenshot 2>/dev/null || true
+                else
+                    apt-get install -y scrot 2>/dev/null || apt-get install -y gnome-screenshot 2>/dev/null || true
+                fi
+                # Display tool
+                if [ "$DISPLAY_SERVER" = "wayland" ]; then
+                    apt-get install -y wlr-randr 2>/dev/null || true
+                else
+                    apt-get install -y x11-xserver-utils 2>/dev/null || true  # provides xrandr
+                fi
+                # Browser
+                apt-get install -y chromium-browser 2>/dev/null || apt-get install -y chromium 2>/dev/null || true
+            else
+                info "Skipping display packages (headless mode)"
+            fi
             ;;
         dnf|yum)
             $PKG_MGR install -y python3 python3-pip git sqlite curl
-            if [ "$DISPLAY_SERVER" = "wayland" ]; then
-                $PKG_MGR install -y grim 2>/dev/null || $PKG_MGR install -y gnome-screenshot 2>/dev/null || true
-                $PKG_MGR install -y wlr-randr 2>/dev/null || true
-            else
-                $PKG_MGR install -y scrot 2>/dev/null || $PKG_MGR install -y gnome-screenshot 2>/dev/null || true
-                $PKG_MGR install -y xrandr 2>/dev/null || $PKG_MGR install -y xorg-x11-server-utils 2>/dev/null || true
-            fi
             $PKG_MGR install -y NetworkManager 2>/dev/null || true
-            $PKG_MGR install -y chromium 2>/dev/null || $PKG_MGR install -y chromium-browser 2>/dev/null || true
+            if [ "$HEADLESS" = false ]; then
+                if [ "$DISPLAY_SERVER" = "wayland" ]; then
+                    $PKG_MGR install -y grim 2>/dev/null || $PKG_MGR install -y gnome-screenshot 2>/dev/null || true
+                    $PKG_MGR install -y wlr-randr 2>/dev/null || true
+                else
+                    $PKG_MGR install -y scrot 2>/dev/null || $PKG_MGR install -y gnome-screenshot 2>/dev/null || true
+                    $PKG_MGR install -y xrandr 2>/dev/null || $PKG_MGR install -y xorg-x11-server-utils 2>/dev/null || true
+                fi
+                $PKG_MGR install -y chromium 2>/dev/null || $PKG_MGR install -y chromium-browser 2>/dev/null || true
+            else
+                info "Skipping display packages (headless mode)"
+            fi
             ;;
         pacman)
             pacman -Sy --noconfirm python python-pip git sqlite curl
-            if [ "$DISPLAY_SERVER" = "wayland" ]; then
-                pacman -S --noconfirm grim 2>/dev/null || true
-                pacman -S --noconfirm wlr-randr 2>/dev/null || true
-            else
-                pacman -S --noconfirm scrot 2>/dev/null || true
-                pacman -S --noconfirm xorg-xrandr 2>/dev/null || true
-            fi
             pacman -S --noconfirm networkmanager 2>/dev/null || true
-            pacman -S --noconfirm chromium 2>/dev/null || true
+            if [ "$HEADLESS" = false ]; then
+                if [ "$DISPLAY_SERVER" = "wayland" ]; then
+                    pacman -S --noconfirm grim 2>/dev/null || true
+                    pacman -S --noconfirm wlr-randr 2>/dev/null || true
+                else
+                    pacman -S --noconfirm scrot 2>/dev/null || true
+                    pacman -S --noconfirm xorg-xrandr 2>/dev/null || true
+                fi
+                pacman -S --noconfirm chromium 2>/dev/null || true
+            else
+                info "Skipping display packages (headless mode)"
+            fi
             ;;
     esac
 }
@@ -138,15 +168,17 @@ install_packages
 command -v python3 &>/dev/null || error "python3 not found after install"
 command -v git &>/dev/null || error "git not found after install"
 
-# Check for a browser
-if command -v chromium-browser &>/dev/null; then
-    log "Browser: chromium-browser"
-elif command -v chromium &>/dev/null; then
-    log "Browser: chromium"
-elif command -v google-chrome &>/dev/null; then
-    log "Browser: google-chrome"
-else
-    warn "No Chromium/Chrome browser found — install manually for kiosk mode"
+# Check for a browser (only relevant with a display)
+if [ "$HEADLESS" = false ]; then
+    if command -v chromium-browser &>/dev/null; then
+        log "Browser: chromium-browser"
+    elif command -v chromium &>/dev/null; then
+        log "Browser: chromium"
+    elif command -v google-chrome &>/dev/null; then
+        log "Browser: google-chrome"
+    else
+        warn "No Chromium/Chrome browser found — install manually for kiosk mode"
+    fi
 fi
 
 log "System packages installed"
@@ -220,14 +252,18 @@ add_sudoers_entry poweroff ""
 add_sudoers_entry systemctl "reboot"
 add_sudoers_entry systemctl "poweroff"
 add_sudoers_entry systemctl "restart kiosk-manager"
-add_sudoers_entry xrandr ""
-add_sudoers_entry wlr-randr ""
 add_sudoers_entry nmcli ""
 add_sudoers_entry timedatectl ""
 add_sudoers_entry hostnamectl ""
-add_sudoers_entry scrot ""
-add_sudoers_entry grim ""
-add_sudoers_entry gnome-screenshot ""
+
+# Display-dependent sudoers entries (only if display is available)
+if [ "$HEADLESS" = false ]; then
+    add_sudoers_entry xrandr ""
+    add_sudoers_entry wlr-randr ""
+    add_sudoers_entry scrot ""
+    add_sudoers_entry grim ""
+    add_sudoers_entry gnome-screenshot ""
+fi
 
 # Also allow the resolved paths via sysdetect (shutil.which)
 # Add common alternative paths for key binaries
@@ -271,10 +307,6 @@ WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/venv/bin/gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile - wsgi:app
 Restart=always
 RestartSec=5
-Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-0
-Environment=XDG_SESSION_TYPE=$DISPLAY_SERVER
-Environment=XAUTHORITY=$REAL_HOME/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $SERVICE_USER)
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u $SERVICE_USER)/bus
 Environment=KIOSK_SECRET_KEY=$SECRET_KEY
@@ -283,8 +315,13 @@ Environment=KIOSK_SECRET_KEY=$SECRET_KEY
 WantedBy=multi-user.target
 EOF
 
-# Resolution persistence service
-if [ -f "$INSTALL_DIR/deploy/apply-resolution.sh" ]; then
+# Add display environment variables only when a display server is present
+if [ "$HEADLESS" = false ]; then
+    sed -i '/^\[Install\]/i Environment=DISPLAY=:0\nEnvironment=WAYLAND_DISPLAY=wayland-0\nEnvironment=XDG_SESSION_TYPE='"$DISPLAY_SERVER"'\nEnvironment=XAUTHORITY='"$REAL_HOME"'/.Xauthority' /etc/systemd/system/kiosk-manager.service
+fi
+
+# Resolution persistence service (only with a display server)
+if [ "$HEADLESS" = false ] && [ -f "$INSTALL_DIR/deploy/apply-resolution.sh" ]; then
     chmod +x "$INSTALL_DIR/deploy/apply-resolution.sh"
     cat > /etc/systemd/system/kiosk-resolution.service <<EOF
 [Unit]
@@ -340,7 +377,12 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "  ${CYAN}System detected:${NC}"
 echo -e "    Distro:   ${BLUE}${PRETTY_NAME:-$DISTRO}${NC}"
-echo -e "    Display:  ${BLUE}$DISPLAY_SERVER${NC}"
+if [ "$HEADLESS" = true ]; then
+    echo -e "    Display:  ${YELLOW}none (headless)${NC}"
+    echo -e "    Mode:     ${YELLOW}Server mode — Kiosk/Display/Screenshots disabled${NC}"
+else
+    echo -e "    Display:  ${BLUE}$DISPLAY_SERVER${NC}"
+fi
 echo -e "    Packages: ${BLUE}$PKG_MGR${NC}"
 echo ""
 echo -e "  ${CYAN}Access:${NC}"

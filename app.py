@@ -64,9 +64,11 @@ def create_app():
 
     @app.context_processor
     def inject_globals():
+        from sysdetect import get_sys
         return {
             'keyboard_enabled': get_setting('keyboard_enabled', '0') == '1',
             'auth_enabled': get_setting('auth_enabled', '0') == '1',
+            'has_display': get_sys().has_display,
         }
 
     return app

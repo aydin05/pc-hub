@@ -116,6 +116,16 @@ class SystemInfo:
         return self._cache['os'] == 'darwin'
 
     @property
+    def has_display(self):
+        """True if a display server (X11/Wayland) is available."""
+        return self.display_server in ('x11', 'wayland') or self.is_macos
+
+    @property
+    def is_headless(self):
+        """True if running without a display server (server/CLI only)."""
+        return not self.has_display
+
+    @property
     def distro(self):
         return self._cache['distro']
 
@@ -359,6 +369,7 @@ class SystemInfo:
             'distro': self.distro,
             'arch': self._cache['arch'],
             'display_server': self.display_server,
+            'has_display': self.has_display,
             'init_system': self.init_system,
             'net_backend': self.net_backend,
             'browser': self.get_browser() or 'not found',

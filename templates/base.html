@@ -29,6 +29,7 @@
                         <span>Dashboard</span>
                     </a>
                 </div>
+                {% if has_display %}
                 <div class="nav-section">
                     <div class="nav-section-title">Kiosk</div>
                     <a class="nav-link" href="/kiosk/">
@@ -44,6 +45,7 @@
                         <span>Screenshots</span>
                     </a>
                 </div>
+                {% endif %}
                 <div class="nav-section">
                     <div class="nav-section-title">Network</div>
                     <a class="nav-link" href="/network/">

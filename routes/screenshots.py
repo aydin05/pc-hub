@@ -42,12 +42,18 @@ def _capture_screenshot():
 @screenshots_bp.route('/')
 @login_required
 def screenshots_page():
+    if get_sys().is_headless:
+        return render_template('headless.html',
+                               feature='Screenshots',
+                               reason='No display server detected (headless mode).')
     return render_template('screenshots.html')
 
 
 @screenshots_bp.route('/api/capture', methods=['POST'])
 @login_required
 def capture():
+    if get_sys().is_headless:
+        return jsonify({'error': 'Cannot capture screenshots in headless mode (no display server)'}), 400
     filename = _capture_screenshot()
     if filename:
         return jsonify({'success': True, 'filename': filename})

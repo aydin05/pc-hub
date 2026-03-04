@@ -99,18 +99,26 @@ def _get_displays():
 @display_bp.route('/')
 @login_required
 def display_page():
+    if get_sys().is_headless:
+        return render_template('headless.html',
+                               feature='Display & Resolution',
+                               reason='No display server detected (headless mode).')
     return render_template('display.html')
 
 
 @display_bp.route('/api/info')
 @login_required
 def info():
+    if get_sys().is_headless:
+        return jsonify({'displays': [], 'headless': True, 'error': 'No display server available'})
     return jsonify({'displays': _get_displays()})
 
 
 @display_bp.route('/api/set', methods=['POST'])
 @login_required
 def set_resolution():
+    if get_sys().is_headless:
+        return jsonify({'error': 'Cannot set resolution in headless mode (no display server)'}), 400
     data = request.get_json()
     output_name = data.get('output', '')
     mode = data.get('mode', '')

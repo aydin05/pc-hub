@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ feature }} - Unavailable{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{{ feature }}</h1>
+    <p>This feature is not available in headless mode</p>
+</div>
+
+<div class="card" style="text-align:center;padding:48px 24px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" width="64" height="64" style="margin:0 auto 20px;">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+        <line x1="4" y1="5" x2="20" y2="15" stroke="var(--danger)" stroke-width="2"/>
+    </svg>
+    <h2 style="margin-bottom:8px;color:var(--text-primary);">No Display Server Detected</h2>
+    <p style="color:var(--text-secondary);max-width:480px;margin:0 auto 24px;">
+        <strong>{{ feature }}</strong> requires a graphical display server (X11 or Wayland).
+        This system is running in <strong>headless mode</strong> without a desktop environment.
+    </p>
+    <p style="color:var(--text-muted);font-size:13px;">{{ reason }}</p>
+
+    <div style="margin-top:32px;padding:20px;background:var(--bg-tertiary);border-radius:var(--radius-lg);max-width:520px;margin-left:auto;margin-right:auto;text-align:left;">
+        <div style="font-weight:600;margin-bottom:12px;color:var(--text-primary);">To enable this feature:</div>
+        <ul style="color:var(--text-secondary);line-height:2;padding-left:20px;">
+            <li>Install a desktop environment (e.g. <code>sudo apt install ubuntu-desktop</code>)</li>
+            <li>Or install a minimal X server (e.g. <code>sudo apt install xorg openbox</code>)</li>
+            <li>Restart the kiosk-manager service after installing</li>
+        </ul>
+    </div>
+
+    <div style="margin-top:24px;">
+        <a href="/dashboard" class="btn btn-primary">Back to Dashboard</a>
+    </div>
+</div>
+{% endblock %}
