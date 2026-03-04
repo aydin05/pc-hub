@@ -186,22 +186,54 @@
         activeInput = null;
     }
 
+    function isTypableInput(el) {
+        if (!el) return false;
+        const tag = el.tagName;
+        const type = (el.type || '').toLowerCase();
+        if (tag === 'TEXTAREA') return true;
+        if (tag === 'INPUT' && !['checkbox','radio','submit','button','file','hidden','range','color'].includes(type)) return true;
+        return false;
+    }
+
     // Attach to all inputs and textareas
     document.addEventListener('focusin', (e) => {
-        const tag = e.target.tagName;
-        const type = (e.target.type || '').toLowerCase();
-        if ((tag === 'INPUT' && !['checkbox','radio','submit','button','file','hidden','range','color'].includes(type)) || tag === 'TEXTAREA') {
+        if (isTypableInput(e.target)) {
             activeInput = e.target;
             showKeyboard();
         }
     });
 
+    // Click on a label → focus the associated input and show keyboard
+    document.addEventListener('click', (e) => {
+        const label = e.target.closest('label, .form-label');
+        if (!label) return;
+
+        // If label has a "for" attribute, use that
+        if (label.htmlFor) {
+            const input = document.getElementById(label.htmlFor);
+            if (input && isTypableInput(input)) {
+                input.focus();
+                return;
+            }
+        }
+
+        // Otherwise find the nearest input in the same parent container
+        const container = label.closest('.form-group, .form-inline, .form-row') || label.parentElement;
+        if (container) {
+            const input = container.querySelector('input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=submit]):not([type=button]), textarea');
+            if (input && isTypableInput(input)) {
+                input.focus();
+            }
+        }
+    });
+
+    // Hide keyboard when clicking outside inputs and keyboard
     document.addEventListener('focusout', (e) => {
-        // Small delay to allow clicking keyboard buttons
         setTimeout(() => {
-            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-            // Don't hide if the keyboard itself was clicked
-            if (keyboardEl && keyboardEl.contains(document.activeElement)) return;
+            const active = document.activeElement;
+            if (isTypableInput(active)) return;
+            if (keyboardEl && keyboardEl.contains(active)) return;
+            hideKeyboard();
         }, 200);
     });
 
