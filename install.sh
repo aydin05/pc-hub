@@ -1,6 +1,7 @@
 #!/bin/bash
 # ============================================================
-#  Kiosk Manager - Auto-Detecting Setup Script
+#  Kiosk Manager - Unified Setup Script
+#  Installs the web dashboard + kiosk display (X11/Openbox/Chrome)
 #  Supports: Ubuntu/Debian, Fedora/RHEL/CentOS, Arch Linux
 #  Run as root or with sudo: sudo bash install.sh
 # ============================================================
@@ -33,6 +34,7 @@ REAL_HOME=$(eval echo "~$REAL_USER")
 INSTALL_DIR="/opt/kiosk-manager"
 SERVICE_USER="$REAL_USER"
 PORT=5000
+KIOSK_URL="https://www.google.com"
 
 # ══════════════════════════════════════════════════════════════
 #  STEP 0: Detect system
@@ -69,21 +71,24 @@ elif [ -n "$DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "x11" ]; then
     DISPLAY_SERVER="x11"
     HEADLESS=false
 else
-    # Check if any display manager is installed even if not currently in a session
     if command -v Xorg &>/dev/null || command -v Xwayland &>/dev/null || \
        systemctl is-active display-manager &>/dev/null 2>&1 || \
        [ -d /usr/share/xsessions ] || [ -d /usr/share/wayland-sessions ]; then
         HEADLESS=false
-        # Guess x11 as default when display manager exists but session type unknown
         DISPLAY_SERVER="x11"
     fi
+fi
+
+# Headless systems get kiosk display setup (X11 + Openbox + Chrome)
+TOTAL_STEPS=7
+if [ "$HEADLESS" = true ]; then
+    TOTAL_STEPS=8
 fi
 
 log "Distro:          $DISTRO (${PRETTY_NAME:-$DISTRO})"
 log "Package manager: $PKG_MGR"
 if [ "$HEADLESS" = true ]; then
-    log "Display server:  ${YELLOW}none (headless mode)${NC}"
-    warn "Headless mode: Kiosk, Display, and Screenshot features will be disabled"
+    log "Display server:  ${YELLOW}none (CLI) — will install X11 + Openbox + Chrome kiosk${NC}"
 else
     log "Display server:  $DISPLAY_SERVER"
 fi
@@ -97,40 +102,44 @@ echo ""
 # ══════════════════════════════════════════════════════════════
 #  STEP 1: Install system packages
 # ══════════════════════════════════════════════════════════════
-header "Step 1/7 — Installing system packages"
+header "Step 1/$TOTAL_STEPS — Installing system packages"
 
-# Common packages mapped per package manager
 install_packages() {
     case "$PKG_MGR" in
         apt)
             apt-get update -qq
             apt-get install -y python3 python3-pip python3-venv git sqlite3 curl
-            # Network
             apt-get install -y network-manager 2>/dev/null || true
-            # Display-dependent packages (skip in headless mode)
-            if [ "$HEADLESS" = false ]; then
-                # Screenshot tool
+            if [ "$HEADLESS" = true ]; then
+                # CLI system → install X11 + Openbox + browser + kiosk tools
+                log "Installing X11, Openbox, Chromium, and kiosk tools..."
+                apt-get install -y \
+                    xorg openbox \
+                    scrot x11-xserver-utils unclutter 2>/dev/null || true
+                apt-get install -y chromium 2>/dev/null || \
+                    apt-get install -y chromium-browser 2>/dev/null || true
+            else
+                # Already has a display
                 if [ "$DISPLAY_SERVER" = "wayland" ]; then
                     apt-get install -y grim 2>/dev/null || apt-get install -y gnome-screenshot 2>/dev/null || true
-                else
-                    apt-get install -y scrot 2>/dev/null || apt-get install -y gnome-screenshot 2>/dev/null || true
-                fi
-                # Display tool
-                if [ "$DISPLAY_SERVER" = "wayland" ]; then
                     apt-get install -y wlr-randr 2>/dev/null || true
                 else
-                    apt-get install -y x11-xserver-utils 2>/dev/null || true  # provides xrandr
+                    apt-get install -y scrot 2>/dev/null || apt-get install -y gnome-screenshot 2>/dev/null || true
+                    apt-get install -y x11-xserver-utils 2>/dev/null || true
                 fi
-                # Browser
                 apt-get install -y chromium-browser 2>/dev/null || apt-get install -y chromium 2>/dev/null || true
-            else
-                info "Skipping display packages (headless mode)"
+                apt-get install -y unclutter 2>/dev/null || true
             fi
             ;;
         dnf|yum)
             $PKG_MGR install -y python3 python3-pip git sqlite curl
             $PKG_MGR install -y NetworkManager 2>/dev/null || true
-            if [ "$HEADLESS" = false ]; then
+            if [ "$HEADLESS" = true ]; then
+                log "Installing X11, Openbox, Chromium, and kiosk tools..."
+                $PKG_MGR install -y xorg-x11-server-Xorg xorg-x11-xinit openbox 2>/dev/null || true
+                $PKG_MGR install -y scrot xrandr unclutter 2>/dev/null || true
+                $PKG_MGR install -y chromium 2>/dev/null || true
+            else
                 if [ "$DISPLAY_SERVER" = "wayland" ]; then
                     $PKG_MGR install -y grim 2>/dev/null || $PKG_MGR install -y gnome-screenshot 2>/dev/null || true
                     $PKG_MGR install -y wlr-randr 2>/dev/null || true
@@ -139,14 +148,18 @@ install_packages() {
                     $PKG_MGR install -y xrandr 2>/dev/null || $PKG_MGR install -y xorg-x11-server-utils 2>/dev/null || true
                 fi
                 $PKG_MGR install -y chromium 2>/dev/null || $PKG_MGR install -y chromium-browser 2>/dev/null || true
-            else
-                info "Skipping display packages (headless mode)"
+                $PKG_MGR install -y unclutter 2>/dev/null || true
             fi
             ;;
         pacman)
             pacman -Sy --noconfirm python python-pip git sqlite curl
             pacman -S --noconfirm networkmanager 2>/dev/null || true
-            if [ "$HEADLESS" = false ]; then
+            if [ "$HEADLESS" = true ]; then
+                log "Installing X11, Openbox, Chromium, and kiosk tools..."
+                pacman -S --noconfirm xorg-server xorg-xinit openbox 2>/dev/null || true
+                pacman -S --noconfirm scrot xorg-xrandr unclutter 2>/dev/null || true
+                pacman -S --noconfirm chromium 2>/dev/null || true
+            else
                 if [ "$DISPLAY_SERVER" = "wayland" ]; then
                     pacman -S --noconfirm grim 2>/dev/null || true
                     pacman -S --noconfirm wlr-randr 2>/dev/null || true
@@ -155,8 +168,7 @@ install_packages() {
                     pacman -S --noconfirm xorg-xrandr 2>/dev/null || true
                 fi
                 pacman -S --noconfirm chromium 2>/dev/null || true
-            else
-                info "Skipping display packages (headless mode)"
+                pacman -S --noconfirm unclutter 2>/dev/null || true
             fi
             ;;
     esac
@@ -168,17 +180,18 @@ install_packages
 command -v python3 &>/dev/null || error "python3 not found after install"
 command -v git &>/dev/null || error "git not found after install"
 
-# Check for a browser (only relevant with a display)
-if [ "$HEADLESS" = false ]; then
-    if command -v chromium-browser &>/dev/null; then
-        log "Browser: chromium-browser"
-    elif command -v chromium &>/dev/null; then
-        log "Browser: chromium"
-    elif command -v google-chrome &>/dev/null; then
-        log "Browser: google-chrome"
-    else
-        warn "No Chromium/Chrome browser found — install manually for kiosk mode"
+# Find browser
+BROWSER=""
+for b in chromium chromium-browser google-chrome google-chrome-stable; do
+    if command -v "$b" &>/dev/null; then
+        BROWSER="$b"
+        break
     fi
+done
+if [ -n "$BROWSER" ]; then
+    log "Browser: $BROWSER"
+else
+    warn "No Chromium/Chrome browser found — install manually for kiosk mode"
 fi
 
 log "System packages installed"
@@ -186,7 +199,7 @@ log "System packages installed"
 # ══════════════════════════════════════════════════════════════
 #  STEP 2: Copy project files
 # ══════════════════════════════════════════════════════════════
-header "Step 2/7 — Copying project files"
+header "Step 2/$TOTAL_STEPS — Copying project files"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -206,7 +219,7 @@ chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 # ══════════════════════════════════════════════════════════════
 #  STEP 3: Python virtualenv + dependencies
 # ══════════════════════════════════════════════════════════════
-header "Step 3/7 — Setting up Python virtualenv"
+header "Step 3/$TOTAL_STEPS — Setting up Python virtualenv"
 
 sudo -u "$SERVICE_USER" python3 -m venv "$INSTALL_DIR/venv"
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
@@ -217,7 +230,7 @@ log "Python dependencies installed (including gunicorn)"
 # ══════════════════════════════════════════════════════════════
 #  STEP 4: Create data directory
 # ══════════════════════════════════════════════════════════════
-header "Step 4/7 — Creating data directory"
+header "Step 4/$TOTAL_STEPS — Creating data directory"
 mkdir -p "$INSTALL_DIR/data/screenshots"
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR/data"
 log "Data directory ready"
@@ -225,14 +238,13 @@ log "Data directory ready"
 # ══════════════════════════════════════════════════════════════
 #  STEP 5: Auto-detect sudoers (dynamic binary paths)
 # ══════════════════════════════════════════════════════════════
-header "Step 5/7 — Configuring sudoers"
+header "Step 5/$TOTAL_STEPS — Configuring sudoers"
 
 SUDOERS_FILE="/etc/sudoers.d/kiosk-manager"
 echo "# Kiosk Manager sudoers — auto-generated $(date)" > "$SUDOERS_FILE"
 echo "Defaults:$SERVICE_USER !requiretty" >> "$SUDOERS_FILE"
 echo "" >> "$SUDOERS_FILE"
 
-# Only add entries for binaries that actually exist on this system
 add_sudoers_entry() {
     local bin_path
     bin_path=$(command -v "$1" 2>/dev/null || true)
@@ -256,17 +268,13 @@ add_sudoers_entry nmcli ""
 add_sudoers_entry timedatectl ""
 add_sudoers_entry hostnamectl ""
 
-# Display-dependent sudoers entries (only if display is available)
-if [ "$HEADLESS" = false ]; then
-    add_sudoers_entry xrandr ""
-    add_sudoers_entry wlr-randr ""
-    add_sudoers_entry scrot ""
-    add_sudoers_entry grim ""
-    add_sudoers_entry gnome-screenshot ""
-fi
+# Display sudoers entries (always add since we install X11 on headless too)
+add_sudoers_entry xrandr ""
+add_sudoers_entry wlr-randr ""
+add_sudoers_entry scrot ""
+add_sudoers_entry grim ""
+add_sudoers_entry gnome-screenshot ""
 
-# Also allow the resolved paths via sysdetect (shutil.which)
-# Add common alternative paths for key binaries
 for alt_bin in /sbin/reboot /usr/sbin/reboot; do
     if [ -x "$alt_bin" ]; then
         echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $alt_bin" >> "$SUDOERS_FILE"
@@ -280,7 +288,6 @@ done
 
 chmod 440 "$SUDOERS_FILE"
 
-# Validate sudoers file
 if visudo -cf "$SUDOERS_FILE" &>/dev/null; then
     log "Sudoers configured at $SUDOERS_FILE"
 else
@@ -290,9 +297,15 @@ fi
 # ══════════════════════════════════════════════════════════════
 #  STEP 6: systemd services
 # ══════════════════════════════════════════════════════════════
-header "Step 6/7 — Installing systemd service"
+header "Step 6/$TOTAL_STEPS — Installing systemd service"
 
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
+# For headless systems, we set DISPLAY=:0 since we install X11
+KIOSK_DISPLAY_SERVER="${DISPLAY_SERVER}"
+if [ "$HEADLESS" = true ]; then
+    KIOSK_DISPLAY_SERVER="x11"
+fi
 
 cat > /etc/systemd/system/kiosk-manager.service <<EOF
 [Unit]
@@ -310,17 +323,16 @@ RestartSec=5
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u $SERVICE_USER)
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u $SERVICE_USER)/bus
 Environment=KIOSK_SECRET_KEY=$SECRET_KEY
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_SESSION_TYPE=$KIOSK_DISPLAY_SERVER
+Environment=XAUTHORITY=$REAL_HOME/.Xauthority
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Add display environment variables only when a display server is present
-if [ "$HEADLESS" = false ]; then
-    sed -i '/^\[Install\]/i Environment=DISPLAY=:0\nEnvironment=WAYLAND_DISPLAY=wayland-0\nEnvironment=XDG_SESSION_TYPE='"$DISPLAY_SERVER"'\nEnvironment=XAUTHORITY='"$REAL_HOME"'/.Xauthority' /etc/systemd/system/kiosk-manager.service
-fi
-
-# Resolution persistence service (only with a display server)
+# Resolution persistence service (only for systems with an existing display manager)
 if [ "$HEADLESS" = false ] && [ -f "$INSTALL_DIR/deploy/apply-resolution.sh" ]; then
     chmod +x "$INSTALL_DIR/deploy/apply-resolution.sh"
     cat > /etc/systemd/system/kiosk-resolution.service <<EOF
@@ -353,7 +365,7 @@ log "systemd services installed and started"
 # ══════════════════════════════════════════════════════════════
 #  STEP 7: Firewall
 # ══════════════════════════════════════════════════════════════
-header "Step 7/7 — Firewall"
+header "Step 7/$TOTAL_STEPS — Firewall"
 if command -v ufw &>/dev/null; then
     ufw allow "$PORT"/tcp 2>/dev/null || true
     log "ufw: port $PORT opened"
@@ -363,6 +375,131 @@ elif command -v firewall-cmd &>/dev/null; then
     log "firewalld: port $PORT opened"
 else
     warn "No firewall tool found — open port $PORT manually if needed"
+fi
+
+# ══════════════════════════════════════════════════════════════
+#  STEP 8: Kiosk Display Setup (headless/CLI systems only)
+# ══════════════════════════════════════════════════════════════
+if [ "$HEADLESS" = true ]; then
+    header "Step 8/$TOTAL_STEPS — Kiosk Display Setup (X11 + Chrome auto-launch)"
+
+    [ -z "$BROWSER" ] && error "No browser found — cannot set up kiosk display"
+
+    # ── 8a: Auto-login on tty1 ───────────────────────────────
+    log "Configuring auto-login on tty1..."
+    mkdir -p /etc/systemd/system/getty@tty1.service.d
+    cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $SERVICE_USER --noclear %I \$TERM
+EOF
+    log "Auto-login configured for $SERVICE_USER on tty1"
+
+    # ── 8b: Create .xinitrc ──────────────────────────────────
+    log "Creating .xinitrc..."
+    cat > "$REAL_HOME/.xinitrc" <<'XINITRC'
+#!/bin/bash
+# Kiosk X11 startup — auto-generated by install.sh
+LOGFILE="$HOME/.kiosk-x11.log"
+exec >> "$LOGFILE" 2>&1
+echo "=== Kiosk X11 starting at $(date) ==="
+
+# Crash guard
+CRASH_FILE="$HOME/.kiosk-last-crash"
+if [ -f "$CRASH_FILE" ]; then
+    LAST_CRASH=$(cat "$CRASH_FILE")
+    NOW=$(date +%s)
+    DIFF=$((NOW - LAST_CRASH))
+    if [ "$DIFF" -lt 10 ]; then
+        echo "Crash loop detected (last crash ${DIFF}s ago). Sleeping 30s..."
+        sleep 30
+    fi
+fi
+
+# Disable screen saver and power management
+xset s off
+xset -dpms
+xset s noblank
+
+# Hide cursor after 3 seconds of inactivity
+unclutter -idle 3 -root &
+
+# Start openbox window manager
+openbox-session &
+WM_PID=$!
+sleep 2
+
+# Build Chrome flags
+CHROME_FLAGS=(
+    --start-fullscreen
+    --noerrdialogs
+    --disable-infobars
+    --no-first-run
+    --disable-session-crashed-bubble
+    --disable-features=TranslateUI
+    --disable-translate
+    --check-for-update-interval=31536000
+    --remote-debugging-port=9222
+    --remote-debugging-address=0.0.0.0
+)
+
+# Running as root requires --no-sandbox
+if [ "$(id -u)" = "0" ]; then
+    CHROME_FLAGS+=(--no-sandbox)
+fi
+
+# VM-friendly GPU flags
+CHROME_FLAGS+=(--disable-gpu --disable-software-rasterizer)
+
+# Always start with the loading page
+LOADING_URL="http://localhost:5000/kiosk/loading"
+
+# Launch Chrome in a loop
+while true; do
+    echo "Launching: __BROWSER__ ${CHROME_FLAGS[*]} $LOADING_URL"
+    __BROWSER__ "${CHROME_FLAGS[@]}" "$LOADING_URL"
+    RETCODE=$?
+    echo "Chrome exited with code $RETCODE at $(date)"
+    sleep 2
+done
+XINITRC
+
+    sed -i "s|__BROWSER__|$BROWSER|g" "$REAL_HOME/.xinitrc"
+    chmod +x "$REAL_HOME/.xinitrc"
+    chown "$SERVICE_USER":"$SERVICE_USER" "$REAL_HOME/.xinitrc"
+
+    # Save default kiosk URL
+    echo "$KIOSK_URL" > "$REAL_HOME/.kiosk-url"
+    chown "$SERVICE_USER":"$SERVICE_USER" "$REAL_HOME/.kiosk-url"
+
+    log "Created $REAL_HOME/.xinitrc with $BROWSER"
+
+    # ── 8c: Auto-start X on login ────────────────────────────
+    log "Configuring auto-startx..."
+    BASH_PROFILE="$REAL_HOME/.bash_profile"
+
+    # Remove any existing kiosk auto-start block
+    if [ -f "$BASH_PROFILE" ]; then
+        sed -i '/# Auto-start X11 on tty1/,/^fi$/d' "$BASH_PROFILE" 2>/dev/null || true
+        sed -i '/exec startx/d' "$BASH_PROFILE" 2>/dev/null || true
+        sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$BASH_PROFILE" 2>/dev/null || true
+    fi
+
+    cat >> "$BASH_PROFILE" <<'PROFILE'
+
+# Auto-start X11 on tty1 (kiosk mode)
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    exec startx
+fi
+PROFILE
+
+    chown "$SERVICE_USER":"$SERVICE_USER" "$BASH_PROFILE"
+    log "Auto-startx configured in $BASH_PROFILE"
+
+    # ── 8d: Set boot target ──────────────────────────────────
+    systemctl set-default multi-user.target
+    systemctl daemon-reload
+    log "Kiosk display setup complete"
 fi
 
 # ══════════════════════════════════════════════════════════════
@@ -378,8 +515,9 @@ echo ""
 echo -e "  ${CYAN}System detected:${NC}"
 echo -e "    Distro:   ${BLUE}${PRETTY_NAME:-$DISTRO}${NC}"
 if [ "$HEADLESS" = true ]; then
-    echo -e "    Display:  ${YELLOW}none (headless)${NC}"
-    echo -e "    Mode:     ${YELLOW}Server mode — Kiosk/Display/Screenshots disabled${NC}"
+    echo -e "    Display:  ${BLUE}X11 (installed by this script)${NC}"
+    echo -e "    Browser:  ${BLUE}${BROWSER}${NC}"
+    echo -e "    Mode:     ${BLUE}Kiosk — Chrome auto-launches on boot${NC}"
 else
     echo -e "    Display:  ${BLUE}$DISPLAY_SERVER${NC}"
 fi
@@ -395,9 +533,18 @@ echo -e "    Logs:     ${YELLOW}sudo journalctl -u kiosk-manager -f${NC}"
 echo -e "    Restart:  ${YELLOW}sudo systemctl restart kiosk-manager${NC}"
 echo ""
 if [ "$HEADLESS" = true ]; then
-    echo -e "  ${CYAN}Want Chrome kiosk mode?${NC}"
-    echo -e "    Run: ${YELLOW}sudo bash $INSTALL_DIR/deploy/setup-kiosk-display.sh${NC}"
-    echo -e "    This installs X11 + Openbox + auto-login + Chrome autostart"
-    echo -e "    Then reboot and Chrome will launch in kiosk mode"
+    echo -e "  ${CYAN}Kiosk Display:${NC}"
+    echo -e "    - Auto-login as ${BLUE}$SERVICE_USER${NC} on tty1"
+    echo -e "    - Chrome opens loading page → redirects to kiosk URL"
+    echo -e "    - Kiosk URL: ${BLUE}$KIOSK_URL${NC}"
+    echo -e "    - Remote debugging: ${BLUE}http://${MACHINE_IP}:9222${NC}"
+    echo ""
+    echo -e "  ${CYAN}Next step:${NC}"
+    echo -e "    ${YELLOW}sudo reboot${NC}"
+    echo ""
+    echo -e "  ${CYAN}Tips:${NC}"
+    echo -e "    - Press ${YELLOW}Ctrl+Alt+F2${NC} to switch to a second terminal"
+    echo -e "    - Press ${YELLOW}Ctrl+Alt+F1${NC} to switch back to kiosk display"
+    echo -e "    - Press ${YELLOW}F11${NC} to exit fullscreen in Chrome"
     echo ""
 fi
