@@ -154,17 +154,13 @@ fi
 # VM-friendly GPU flags
 CHROME_FLAGS+=(--disable-gpu --disable-software-rasterizer)
 
-# Launch Chrome in a loop — re-reads URL each time so dashboard changes take effect
-while true; do
-    KIOSK_URL_FILE="$HOME/.kiosk-url"
-    if [ -f "$KIOSK_URL_FILE" ]; then
-        URL=$(cat "$KIOSK_URL_FILE")
-    else
-        URL="__KIOSK_URL__"
-    fi
+# Always start with the loading page — it checks URL reachability and redirects
+LOADING_URL="http://localhost:5000/kiosk/loading"
 
-    echo "Launching: __BROWSER__ ${CHROME_FLAGS[*]} $URL"
-    __BROWSER__ "${CHROME_FLAGS[@]}" "$URL"
+# Launch Chrome in a loop
+while true; do
+    echo "Launching: __BROWSER__ ${CHROME_FLAGS[*]} $LOADING_URL"
+    __BROWSER__ "${CHROME_FLAGS[@]}" "$LOADING_URL"
     RETCODE=$?
 
     echo "Chrome exited with code $RETCODE at $(date)"

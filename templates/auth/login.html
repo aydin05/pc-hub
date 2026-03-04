@@ -85,5 +85,8 @@
         });
     })();
     </script>
+    {% if keyboard_enabled %}
+    <script src="{{ url_for('static', filename='js/keyboard.js') }}"></script>
+    {% endif %}
 </body>
 </html>

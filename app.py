@@ -65,8 +65,11 @@ def create_app():
     @app.context_processor
     def inject_globals():
         from sysdetect import get_sys
+        # Only show virtual keyboard when accessed via localhost
+        is_local = request.remote_addr in ('127.0.0.1', '::1')
+        kb_setting = get_setting('keyboard_enabled', '0') == '1'
         return {
-            'keyboard_enabled': get_setting('keyboard_enabled', '0') == '1',
+            'keyboard_enabled': kb_setting and is_local,
             'auth_enabled': get_setting('auth_enabled', '0') == '1',
             'has_display': get_sys().has_display,
         }

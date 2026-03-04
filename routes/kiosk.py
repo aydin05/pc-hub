@@ -1,6 +1,7 @@
 import subprocess
 import signal
 import os
+import re
 import threading
 import time
 import logging
@@ -138,6 +139,71 @@ def kiosk_page():
         'cursor': get_setting('kiosk_cursor', '1'),
     }
     return render_template('kiosk.html', settings=settings)
+
+
+@kiosk_bp.route('/loading')
+def loading_page():
+    """Loading page shown on boot before redirecting to kiosk URL."""
+    return render_template('kiosk_loading.html')
+
+
+@kiosk_bp.route('/api/netinfo')
+def netinfo():
+    """Return device network info (IP, subnet, gateway, DNS) — no auth required."""
+    info = {'ip': '', 'subnet': '', 'gateway': '', 'dns': ''}
+    try:
+        # Get default interface IP and subnet
+        result = subprocess.run(
+            ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            line = result.stdout.strip().split('\n')[0]
+            m = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)/(\d+)', line)
+            if m:
+                info['ip'] = m.group(1)
+                prefix = int(m.group(2))
+                mask = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+                info['subnet'] = f'{(mask>>24)&0xFF}.{(mask>>16)&0xFF}.{(mask>>8)&0xFF}.{mask&0xFF}'
+
+        # Get default gateway
+        result = subprocess.run(
+            ['ip', 'route', 'show', 'default'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            m = re.search(r'default via\s+(\d+\.\d+\.\d+\.\d+)', result.stdout)
+            if m:
+                info['gateway'] = m.group(1)
+
+        # Get DNS from resolv.conf
+        try:
+            with open('/etc/resolv.conf', 'r') as f:
+                dns_servers = re.findall(r'nameserver\s+(\d+\.\d+\.\d+\.\d+)', f.read())
+                info['dns'] = ', '.join(dns_servers) if dns_servers else ''
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning('Could not get network info: %s', e)
+    return jsonify(info)
+
+
+@kiosk_bp.route('/api/check-url')
+def check_url():
+    """Check if the configured kiosk URL is reachable — no auth required."""
+    url = get_setting('kiosk_url', 'https://www.google.com')
+    try:
+        resp = urllib.request.urlopen(url, timeout=5)
+        return jsonify({'reachable': True, 'url': url, 'status': resp.getcode()})
+    except urllib.error.HTTPError as e:
+        return jsonify({'reachable': False, 'url': url, 'status': e.code,
+                        'error': f'HTTP {e.code}: {e.reason}'})
+    except urllib.error.URLError as e:
+        return jsonify({'reachable': False, 'url': url, 'status': 0,
+                        'error': f'Connection error: {e.reason}'})
+    except Exception as e:
+        return jsonify({'reachable': False, 'url': url, 'status': 0,
+                        'error': str(e)})
 
 
 @kiosk_bp.route('/error-page')
