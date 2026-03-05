@@ -35,6 +35,28 @@
     <div id="update-status" class="mb-4"></div>
     <div class="terminal" id="update-output" style="min-height:150px;display:none;"></div>
 </div>
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="card-title">Offline Update</div>
+    </div>
+    <p class="text-muted" style="font-size:12px;margin-bottom:12px;">Upload a <code>.zip</code> file containing an <code>update.sh</code> script. The archive will be extracted to a temporary directory, update.sh will be executed, then all temp files are cleaned up.</p>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Update Package (.zip)</label>
+            <input type="file" class="form-input" id="offline-file" accept=".zip" style="width:320px;">
+        </div>
+        <button class="btn btn-primary" id="offline-upload-btn" onclick="uploadOffline()" style="height:38px;">Upload</button>
+    </div>
+    <div id="offline-info" style="display:none;margin-bottom:12px;">
+        <div class="badge badge-success mb-2">Package ready</div>
+        <div id="offline-files" class="text-muted" style="font-size:12px;margin-bottom:8px;"></div>
+        <button class="btn btn-warning" id="offline-run-btn" onclick="runOffline()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Run Update
+        </button>
+    </div>
+    <div class="terminal" id="offline-output" style="min-height:150px;display:none;"></div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -76,6 +98,59 @@ function pullUpdate() {
         onError: () => {
             appendTerminal(terminal, '[ERROR] Connection lost');
             $('#pull-btn').disabled = false;
+        },
+    });
+}
+
+// ── Offline Update ────────────────────────────────
+function uploadOffline() {
+    const fileInput = $('#offline-file');
+    const file = fileInput.files[0];
+    if (!file) return Toast.warning('Select a .zip file');
+
+    $('#offline-upload-btn').disabled = true;
+    $('#offline-info').style.display = 'none';
+
+    const form = new FormData();
+    form.append('update_zip', file);
+
+    fetch('/update/api/offline-upload', { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+            $('#offline-upload-btn').disabled = false;
+            if (data.success) {
+                Toast.success('Package uploaded and extracted');
+                const info = $('#offline-info');
+                info.style.display = '';
+                const files = data.files || [];
+                $('#offline-files').textContent = 'Files: ' + files.join(', ');
+            } else {
+                Toast.error(data.error || 'Upload failed');
+            }
+        })
+        .catch(() => {
+            $('#offline-upload-btn').disabled = false;
+            Toast.error('Upload failed');
+        });
+}
+
+function runOffline() {
+    const terminal = $('#offline-output');
+    terminal.style.display = '';
+    terminal.textContent = '';
+    $('#offline-run-btn').disabled = true;
+
+    streamSSE('/update/api/offline-run', {
+        onMessage: (line) => appendTerminal(terminal, line),
+        onDone: (line) => {
+            appendTerminal(terminal, line || 'Offline update finished.');
+            $('#offline-run-btn').disabled = false;
+            $('#offline-info').style.display = 'none';
+            loadUpdateInfo();
+        },
+        onError: () => {
+            appendTerminal(terminal, '[ERROR] Connection lost');
+            $('#offline-run-btn').disabled = false;
         },
     });
 }

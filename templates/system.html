@@ -63,6 +63,56 @@
         </button>
     </div>
 </div>
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="card-title">Scheduled Reboot</div>
+    </div>
+    <div class="toggle-wrap mb-4">
+        <label class="toggle">
+            <input type="checkbox" id="sched-enabled">
+            <span class="toggle-slider"></span>
+        </label>
+        <span>Enable automatic daily reboot</span>
+    </div>
+    <div id="sched-options">
+        <div class="form-row">
+            <div class="form-group" style="max-width:120px;">
+                <label class="form-label">Hour (0–23)</label>
+                <input type="number" class="form-input" id="sched-hour" min="0" max="23" value="3">
+            </div>
+            <div class="form-group" style="max-width:120px;">
+                <label class="form-label">Minute (0–59)</label>
+                <input type="number" class="form-input" id="sched-minute" min="0" max="59" value="0">
+            </div>
+            <div class="form-group" style="max-width:200px;">
+                <label class="form-label">Days (cron format)</label>
+                <input type="text" class="form-input" id="sched-days" value="*" placeholder="* = every day">
+                <small class="text-muted" style="display:block;margin-top:2px;">* = daily, 1-5 = Mon-Fri, 0,6 = weekends</small>
+            </div>
+        </div>
+    </div>
+    <button class="btn btn-primary mt-2" onclick="saveScheduleReboot()">Save Schedule</button>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="card-title">SSL Certificates</div>
+        <button class="btn btn-sm btn-outline" onclick="loadCerts()">Refresh</button>
+    </div>
+    <p class="text-muted" style="font-size:12px;margin-bottom:12px;">Install self-signed certificates so Chromium trusts your HTTPS sites. Requires <code>libnss3-tools</code>.</p>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Certificate Name</label>
+            <input type="text" class="form-input" id="cert-name" placeholder="my-cert" style="width:200px;">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Certificate File (.pem, .crt, .cer, .der)</label>
+            <input type="file" class="form-input" id="cert-file" accept=".pem,.crt,.cer,.der" style="width:280px;">
+        </div>
+        <button class="btn btn-primary" onclick="uploadCert()" style="height:38px;">Install</button>
+    </div>
+    <div id="cert-list" style="color:var(--text-secondary);">Loading...</div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -112,9 +162,95 @@ function confirmShutdown() {
     );
 }
 
+// ── Scheduled Reboot ──────────────────────────────
+function loadScheduleReboot() {
+    api('/system/api/schedule-reboot').then(data => {
+        $('#sched-enabled').checked = data.enabled;
+        $('#sched-hour').value = data.hour;
+        $('#sched-minute').value = data.minute;
+        $('#sched-days').value = data.days;
+    }).catch(() => {});
+}
+
+function saveScheduleReboot() {
+    const data = {
+        enabled: $('#sched-enabled').checked,
+        hour: parseInt($('#sched-hour').value) || 0,
+        minute: parseInt($('#sched-minute').value) || 0,
+        days: $('#sched-days').value || '*',
+    };
+    api('/system/api/schedule-reboot', { method: 'POST', body: data }).then(() => {
+        Toast.success(data.enabled ? 'Auto-reboot scheduled' : 'Auto-reboot disabled');
+    }).catch(err => Toast.error(err.message));
+}
+
+// ── SSL Certificates ─────────────────────────────
+function loadCerts() {
+    const el = $('#cert-list');
+    el.innerHTML = '<span class="text-muted">Loading...</span>';
+    api('/system/api/certs').then(data => {
+        if (!data.success) {
+            el.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(data.error) + '</span>';
+            return;
+        }
+        if (data.certs.length === 0) {
+            el.innerHTML = '<span class="text-muted">No custom certificates installed.</span>';
+            return;
+        }
+        let html = '<table style="width:100%;"><thead><tr><th>Name</th><th>Trust</th><th></th></tr></thead><tbody>';
+        data.certs.forEach(c => {
+            html += '<tr><td>' + escapeHtml(c.name) + '</td><td><code>' + escapeHtml(c.trust) + '</code></td>';
+            html += '<td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="deleteCert(\'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')">Delete</button></td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    }).catch(err => {
+        el.innerHTML = '<span style="color:var(--danger);">Failed to load certificates</span>';
+    });
+}
+
+function uploadCert() {
+    const fileInput = $('#cert-file');
+    const file = fileInput.files[0];
+    if (!file) return Toast.warning('Select a certificate file');
+
+    const form = new FormData();
+    form.append('cert', file);
+    form.append('name', $('#cert-name').value || '');
+
+    fetch('/system/api/certs/upload', { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                Toast.success('Certificate installed: ' + data.name);
+                loadCerts();
+                fileInput.value = '';
+                $('#cert-name').value = '';
+            } else {
+                Toast.error(data.error || 'Upload failed');
+            }
+        })
+        .catch(() => Toast.error('Upload failed'));
+}
+
+function deleteCert(name) {
+    Modal.show('Delete Certificate',
+        'Delete certificate <strong>' + escapeHtml(name) + '</strong>? Chromium will no longer trust it.',
+        () => {
+            api('/system/api/certs/delete', { method: 'POST', body: { name } }).then(() => {
+                Toast.success('Certificate deleted');
+                loadCerts();
+            }).catch(err => Toast.error(err.message));
+        },
+        'Delete', 'btn-danger'
+    );
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadSysInfo();
     setInterval(loadSysInfo, 15000);
+    loadScheduleReboot();
+    loadCerts();
 });
 </script>
 {% endblock %}

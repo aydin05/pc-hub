@@ -1,5 +1,8 @@
 import subprocess
 import os
+import shutil
+import tempfile
+import zipfile
 import logging
 from flask import Blueprint, render_template, request, jsonify, Response
 from auth_utils import login_required
@@ -107,6 +110,127 @@ def pull():
             yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: [ERROR] {str(e)}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+
+@update_bp.route('/api/offline-upload', methods=['POST'])
+@login_required
+def offline_upload():
+    """Accept an update.zip, extract to temp dir, run update.sh, cleanup."""
+    if 'update_zip' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    f = request.files['update_zip']
+    if not f.filename:
+        return jsonify({'error': 'No file selected'}), 400
+
+    if not f.filename.lower().endswith('.zip'):
+        return jsonify({'error': 'Only .zip files are accepted'}), 400
+
+    # Save zip to a temp location
+    tmp_dir = tempfile.mkdtemp(prefix='kiosk-update-')
+    zip_path = os.path.join(tmp_dir, 'update.zip')
+    try:
+        f.save(zip_path)
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({'error': f'Failed to save file: {e}'}), 500
+
+    # Validate it's a valid zip
+    if not zipfile.is_zipfile(zip_path):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({'error': 'File is not a valid ZIP archive'}), 400
+
+    # Extract
+    extract_dir = os.path.join(tmp_dir, 'extracted')
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            zf.extractall(extract_dir)
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({'error': f'Failed to extract ZIP: {e}'}), 500
+
+    # Check for update.sh
+    update_script = os.path.join(extract_dir, 'update.sh')
+    if not os.path.isfile(update_script):
+        # Also check one level deep (if zip contains a single folder)
+        for entry in os.listdir(extract_dir):
+            candidate = os.path.join(extract_dir, entry, 'update.sh')
+            if os.path.isfile(candidate):
+                update_script = candidate
+                extract_dir = os.path.join(extract_dir, entry)
+                break
+        else:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return jsonify({'error': 'No update.sh found in the ZIP archive'}), 400
+
+    # Save tmp_dir path for the run step
+    state_file = os.path.join(current_app.root_path, 'data', '.offline-update-dir')
+    with open(state_file, 'w') as sf:
+        sf.write(tmp_dir + '\n' + extract_dir + '\n' + update_script)
+
+    return jsonify({
+        'success': True,
+        'tmp_dir': tmp_dir,
+        'files': os.listdir(extract_dir),
+    })
+
+
+@update_bp.route('/api/offline-run')
+@login_required
+def offline_run():
+    """Run the extracted update.sh and stream output. Cleanup after."""
+    state_file = os.path.join(current_app.root_path, 'data', '.offline-update-dir')
+    if not os.path.isfile(state_file):
+        return jsonify({'error': 'No pending offline update. Upload a ZIP first.'}), 400
+
+    with open(state_file, 'r') as sf:
+        lines = sf.read().strip().split('\n')
+    if len(lines) < 3:
+        os.remove(state_file)
+        return jsonify({'error': 'Invalid update state'}), 500
+
+    tmp_dir, extract_dir, update_script = lines[0], lines[1], lines[2]
+
+    if not os.path.isfile(update_script):
+        os.remove(state_file)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({'error': 'update.sh not found — was it already cleaned up?'}), 400
+
+    def generate():
+        try:
+            os.chmod(update_script, 0o755)
+            yield f"data: [INFO] Running: {update_script}\n\n"
+            yield f"data: [INFO] Working directory: {extract_dir}\n\n"
+
+            proc = subprocess.Popen(
+                ['sudo', 'bash', update_script],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, cwd=extract_dir
+            )
+            for line in iter(proc.stdout.readline, ''):
+                yield f"data: {line.rstrip()}\n\n"
+            proc.wait()
+
+            if proc.returncode == 0:
+                yield "data: [SUCCESS] Update script completed successfully.\n\n"
+            else:
+                yield f"data: [ERROR] Update script exited with code {proc.returncode}\n\n"
+
+        except Exception as e:
+            yield f"data: [ERROR] {str(e)}\n\n"
+        finally:
+            # Cleanup
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                if os.path.isfile(state_file):
+                    os.remove(state_file)
+                yield "data: [INFO] Temporary files cleaned up.\n\n"
+            except Exception:
+                pass
+            yield "data: [DONE]\n\n"
 
     return Response(generate(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})

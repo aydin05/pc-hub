@@ -110,6 +110,7 @@ install_packages() {
             apt-get update -qq
             apt-get install -y python3 python3-pip python3-venv git sqlite3 curl
             apt-get install -y network-manager 2>/dev/null || true
+            apt-get install -y systemd-timesyncd libnss3-tools 2>/dev/null || true
             if [ "$HEADLESS" = true ]; then
                 # CLI system → install X11 + Openbox + browser + kiosk tools
                 log "Installing X11, Openbox, Chromium, and kiosk tools..."
@@ -134,6 +135,7 @@ install_packages() {
         dnf|yum)
             $PKG_MGR install -y python3 python3-pip git sqlite curl
             $PKG_MGR install -y NetworkManager 2>/dev/null || true
+            $PKG_MGR install -y systemd-timesyncd nss-tools 2>/dev/null || true
             if [ "$HEADLESS" = true ]; then
                 log "Installing X11, Openbox, Chromium, and kiosk tools..."
                 $PKG_MGR install -y xorg-x11-server-Xorg xorg-x11-xinit openbox 2>/dev/null || true
@@ -154,6 +156,7 @@ install_packages() {
         pacman)
             pacman -Sy --noconfirm python python-pip git sqlite curl
             pacman -S --noconfirm networkmanager 2>/dev/null || true
+            pacman -S --noconfirm nss 2>/dev/null || true
             if [ "$HEADLESS" = true ]; then
                 log "Installing X11, Openbox, Chromium, and kiosk tools..."
                 pacman -S --noconfirm xorg-server xorg-xinit openbox 2>/dev/null || true

@@ -46,7 +46,14 @@
             </label>
             <span>Enable NTP (automatic time sync)</span>
         </div>
-        <p class="text-muted" style="font-size:12px;">When NTP is enabled, the system time is automatically synchronized with internet time servers.</p>
+        <div class="form-group">
+            <label class="form-label">NTP Server</label>
+            <div style="display:flex;gap:8px;">
+                <input type="text" class="form-input" id="ntp-server" placeholder="e.g. pool.ntp.org" style="flex:1;">
+                <button class="btn btn-primary" onclick="setNtpServer()">Save</button>
+            </div>
+            <small class="text-muted" style="display:block;margin-top:4px;">Custom NTP server address. Leave blank for system default.</small>
+        </div>
     </div>
 
     <div class="card">
@@ -118,6 +125,21 @@ function setNtp() {
     }).catch(err => Toast.error(err.message));
 }
 
+function loadNtpServer() {
+    api('/datetime/api/ntp-server').then(data => {
+        $('#ntp-server').value = data.ntp_server || '';
+    }).catch(() => {});
+}
+
+function setNtpServer() {
+    const server = $('#ntp-server').value.trim();
+    if (!server) return Toast.warning('Enter an NTP server address');
+    api('/datetime/api/ntp-server', { method: 'POST', body: { server } }).then(() => {
+        Toast.success('NTP server set to ' + server);
+        loadTimeInfo();
+    }).catch(err => Toast.error(err.message));
+}
+
 function setManualTime() {
     const date = $('#manual-date').value;
     const time = $('#manual-time').value;
@@ -140,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
     startClock('live-clock');
     loadTimeInfo();
     loadTimezones();
+    loadNtpServer();
 });
 </script>
 {% endblock %}

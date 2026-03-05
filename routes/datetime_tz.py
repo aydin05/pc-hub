@@ -1,5 +1,7 @@
 import subprocess
+import os
 import re
+import tempfile
 import time as _time
 import logging
 from flask import Blueprint, render_template, request, jsonify
@@ -146,6 +148,67 @@ def set_ntp():
         return jsonify({'error': f'Failed to set NTP: {output}'}), 500
 
     return jsonify({'success': True, 'ntp': enabled})
+
+
+@datetime_bp.route('/api/ntp-server')
+@login_required
+def get_ntp_server():
+    """Read current NTP server from systemd-timesyncd config."""
+    ntp_server = ''
+    try:
+        with open('/etc/systemd/timesyncd.conf', 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('NTP='):
+                    ntp_server = line.split('=', 1)[1].strip()
+                    break
+                elif line.startswith('FallbackNTP=') and not ntp_server:
+                    ntp_server = line.split('=', 1)[1].strip()
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning('Could not read timesyncd.conf: %s', e)
+    return jsonify({'ntp_server': ntp_server})
+
+
+@datetime_bp.route('/api/ntp-server', methods=['POST'])
+@login_required
+def set_ntp_server():
+    """Set custom NTP server in systemd-timesyncd config."""
+    data = request.get_json()
+    server = data.get('server', '').strip()
+
+    if not server:
+        return jsonify({'error': 'NTP server address is required'}), 400
+
+    # Validate: basic hostname/IP check
+    if not re.match(r'^[a-zA-Z0-9._\-:]+$', server):
+        return jsonify({'error': 'Invalid NTP server address'}), 400
+
+    try:
+        conf_content = '[Time]\nNTP={}\n'.format(server)
+        # Write to a temp file then move (needs sudo)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as tmp:
+            tmp.write(conf_content)
+            tmp_path = tmp.name
+
+        output, rc = _run_cmd(['sudo', 'cp', tmp_path, '/etc/systemd/timesyncd.conf'])
+        os.remove(tmp_path)
+
+        if rc != 0:
+            return jsonify({'error': f'Failed to write config: {output}'}), 500
+
+        # Restart timesyncd to apply
+        _run_cmd(['sudo', 'systemctl', 'restart', 'systemd-timesyncd'])
+        # Enable NTP
+        sys = get_sys()
+        if sys.has('timedatectl'):
+            _run_cmd(['sudo', sys.bin('timedatectl'), 'set-ntp', 'true'])
+
+        logger.info('NTP server set to: %s', server)
+        return jsonify({'success': True, 'ntp_server': server})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @datetime_bp.route('/api/set-time', methods=['POST'])
