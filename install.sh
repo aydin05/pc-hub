@@ -79,9 +79,9 @@ else
     fi
 fi
 
-# Headless systems get kiosk display setup (X11 + Openbox + Chrome)
+# Kiosk display setup runs on headless OR if .xinitrc already exists (re-install)
 TOTAL_STEPS=7
-if [ "$HEADLESS" = true ]; then
+if [ "$HEADLESS" = true ] || [ -f "$REAL_HOME/.xinitrc" ]; then
     TOTAL_STEPS=8
 fi
 
@@ -378,24 +378,36 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 8: Kiosk Display Setup (headless/CLI systems only)
+#  STEP 8: Kiosk Display Setup
+#  Runs on first install (headless) AND on re-installs where
+#  .xinitrc already exists to keep it up-to-date.
 # ══════════════════════════════════════════════════════════════
+KIOSK_SETUP=false
 if [ "$HEADLESS" = true ]; then
+    KIOSK_SETUP=true
+elif [ -f "$REAL_HOME/.xinitrc" ]; then
+    KIOSK_SETUP=true
+    log "Existing .xinitrc detected — will update kiosk display config"
+fi
+
+if [ "$KIOSK_SETUP" = true ]; then
     header "Step 8/$TOTAL_STEPS — Kiosk Display Setup (X11 + Chrome auto-launch)"
 
     [ -z "$BROWSER" ] && error "No browser found — cannot set up kiosk display"
 
-    # ── 8a: Auto-login on tty1 ───────────────────────────────
-    log "Configuring auto-login on tty1..."
-    mkdir -p /etc/systemd/system/getty@tty1.service.d
-    cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
+    # ── 8a: Auto-login on tty1 (only on first headless setup) ─
+    if [ "$HEADLESS" = true ]; then
+        log "Configuring auto-login on tty1..."
+        mkdir -p /etc/systemd/system/getty@tty1.service.d
+        cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin $SERVICE_USER --noclear %I \$TERM
 EOF
-    log "Auto-login configured for $SERVICE_USER on tty1"
+        log "Auto-login configured for $SERVICE_USER on tty1"
+    fi
 
-    # ── 8b: Create .xinitrc ──────────────────────────────────
+    # ── 8b: Create/update .xinitrc ───────────────────────────
     log "Creating .xinitrc..."
     cat > "$REAL_HOME/.xinitrc" <<'XINITRC'
 #!/bin/bash
@@ -526,8 +538,8 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "  ${CYAN}System detected:${NC}"
 echo -e "    Distro:   ${BLUE}${PRETTY_NAME:-$DISTRO}${NC}"
-if [ "$HEADLESS" = true ]; then
-    echo -e "    Display:  ${BLUE}X11 (installed by this script)${NC}"
+if [ "$KIOSK_SETUP" = true ]; then
+    echo -e "    Display:  ${BLUE}X11 (kiosk mode)${NC}"
     echo -e "    Browser:  ${BLUE}${BROWSER}${NC}"
     echo -e "    Mode:     ${BLUE}Kiosk — Chrome auto-launches on boot${NC}"
 else
@@ -544,7 +556,7 @@ echo -e "    Status:   ${YELLOW}sudo systemctl status kiosk-manager${NC}"
 echo -e "    Logs:     ${YELLOW}sudo journalctl -u kiosk-manager -f${NC}"
 echo -e "    Restart:  ${YELLOW}sudo systemctl restart kiosk-manager${NC}"
 echo ""
-if [ "$HEADLESS" = true ]; then
+if [ "$KIOSK_SETUP" = true ]; then
     echo -e "  ${CYAN}Kiosk Display:${NC}"
     echo -e "    - Auto-login as ${BLUE}$SERVICE_USER${NC} on tty1"
     echo -e "    - Chrome opens loading page → redirects to kiosk URL"
