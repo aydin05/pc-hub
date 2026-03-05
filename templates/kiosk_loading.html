@@ -20,18 +20,26 @@
         }
 
         .logo {
+            display:flex;align-items:center;justify-content:center;
+            cursor:pointer;
+            transition:transform 0.2s,box-shadow 0.2s;
+            margin-bottom:32px;
+        }
+        .logo:hover { transform:scale(1.05); }
+        .logo:active { transform:scale(0.97); }
+        .logo-fallback {
             width:120px;height:120px;
             background:linear-gradient(135deg,#5b6abf,#7c3aed);
             border-radius:28px;
             display:flex;align-items:center;justify-content:center;
             font-size:56px;font-weight:700;color:#fff;
-            cursor:pointer;
             box-shadow:0 8px 32px rgba(91,106,191,0.4);
-            transition:transform 0.2s,box-shadow 0.2s;
-            margin-bottom:32px;
         }
-        .logo:hover { transform:scale(1.05); box-shadow:0 12px 40px rgba(91,106,191,0.5); }
-        .logo:active { transform:scale(0.97); }
+        .logo-img {
+            max-width:200px;max-height:160px;
+            width:auto;height:auto;
+            object-fit:contain;
+        }
 
         .status {
             text-align:center;
@@ -92,7 +100,7 @@
 <body>
     <div class="countdown-bar" id="countdown-bar"></div>
 
-    <div class="logo" id="logo" title="Tap to open admin panel"><span id="logo-fallback">K</span></div>
+    <div class="logo" id="logo" title="Tap to open admin panel"><div class="logo-fallback" id="logo-fallback">K</div></div>
 
     <div class="status" id="status">
         <div class="status-text">Starting up...</div>
@@ -243,7 +251,7 @@
                 var el = document.getElementById('logo');
                 var fallback = document.getElementById('logo-fallback');
                 if (fallback) fallback.style.display = 'none';
-                img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:28px;';
+                img.className = 'logo-img';
                 el.insertBefore(img, el.firstChild);
             };
             img.src = '/settings/api/logo?t=' + Date.now();
