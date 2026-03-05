@@ -190,11 +190,30 @@
     function showKeyboard() {
         createKeyboard();
         keyboardEl.style.display = '';
+        scrollInputIntoView();
     }
 
     function hideKeyboard() {
         if (keyboardEl) keyboardEl.style.display = 'none';
         activeInput = null;
+        document.documentElement.style.scrollPaddingBottom = '';
+    }
+
+    function scrollInputIntoView() {
+        if (!activeInput || !keyboardEl) return;
+        // Wait one frame so keyboard is rendered and has a measurable height
+        requestAnimationFrame(function() {
+            const kbHeight = keyboardEl.offsetHeight;
+            // Add scroll-padding so scrollIntoView stops above the keyboard
+            document.documentElement.style.scrollPaddingBottom = (kbHeight + 16) + 'px';
+            // Check if the input is hidden behind the keyboard
+            const rect = activeInput.getBoundingClientRect();
+            const viewportH = window.innerHeight;
+            const inputBottom = rect.bottom + 16; // 16px breathing room
+            if (inputBottom > viewportH - kbHeight) {
+                activeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
     }
 
     function isTypableInput(el) {
