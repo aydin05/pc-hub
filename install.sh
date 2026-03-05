@@ -436,16 +436,21 @@ CHROME_FLAGS=(
     --disable-infobars
     --no-first-run
     --disable-session-crashed-bubble
+    --hide-crash-restore-bubble
     --disable-features=TranslateUI
     --disable-translate
+    --disable-component-update
+    --no-default-browser-check
+    --disable-default-apps
+    --autoplay-policy=no-user-gesture-required
     --check-for-update-interval=31536000
     --remote-debugging-port=9222
     --remote-debugging-address=0.0.0.0
 )
 
-# Running as root requires --no-sandbox
+# Running as root requires --no-sandbox; --test-type suppresses the warning bar
 if [ "$(id -u)" = "0" ]; then
-    CHROME_FLAGS+=(--no-sandbox)
+    CHROME_FLAGS+=(--no-sandbox --test-type)
 fi
 
 # VM-friendly GPU flags
@@ -456,6 +461,13 @@ LOADING_URL="http://localhost:5000/kiosk/loading"
 
 # Launch Chrome in a loop
 while true; do
+    # Clean crash state to prevent "Restore pages?" dialog
+    CHROME_PREFS="$HOME/.config/chromium/Default/Preferences"
+    if [ -f "$CHROME_PREFS" ]; then
+        sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$CHROME_PREFS" 2>/dev/null || true
+        sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$CHROME_PREFS" 2>/dev/null || true
+    fi
+
     echo "Launching: __BROWSER__ ${CHROME_FLAGS[*]} $LOADING_URL"
     __BROWSER__ "${CHROME_FLAGS[@]}" "$LOADING_URL"
     RETCODE=$?

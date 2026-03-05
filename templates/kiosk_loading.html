@@ -19,7 +19,6 @@
             user-select:none;
         }
 
-        /* Logo */
         .logo {
             width:120px;height:120px;
             background:linear-gradient(135deg,#5b6abf,#7c3aed);
@@ -34,7 +33,6 @@
         .logo:hover { transform:scale(1.05); box-shadow:0 12px 40px rgba(91,106,191,0.5); }
         .logo:active { transform:scale(0.97); }
 
-        /* Status area */
         .status {
             text-align:center;
             min-height:80px;
@@ -53,21 +51,18 @@
             font-size:16px;
             font-weight:600;
         }
-        .status-ok {
-            color:#22c55e;
-        }
+        .status-ok { color:#22c55e; }
 
-        /* Countdown bar */
         .countdown-bar {
             position:fixed;
             top:0;left:0;
             height:4px;
             background:linear-gradient(90deg,#5b6abf,#22c55e);
-            transition:width 0.3s linear;
+            transition:width 1s linear;
             z-index:100;
+            width:0;
         }
 
-        /* Network info - bottom right */
         .netinfo {
             position:fixed;
             bottom:16px;right:24px;
@@ -77,17 +72,20 @@
             line-height:1.8;
             font-family:'Courier New',monospace;
         }
-        .netinfo .label {
-            color:#8b8fa8;
-            font-weight:600;
-        }
+        .netinfo .label { color:#8b8fa8; font-weight:600; }
 
-        /* Tap hint */
         .tap-hint {
             position:fixed;
             bottom:16px;left:24px;
             font-size:11px;
             color:#3a3d50;
+            transition:opacity 0.3s;
+        }
+
+        .retry-countdown {
+            display:inline-block;
+            min-width:18px;
+            text-align:center;
         }
     </style>
 </head>
@@ -104,29 +102,29 @@
         <div><span class="label">IP:</span> Loading...</div>
     </div>
 
-    <div class="tap-hint">Tap logo to access admin panel</div>
+    <div class="tap-hint" id="tap-hint">Tap logo to access admin panel</div>
 
     <script>
     (function() {
-        const COUNTDOWN_SECONDS = 5;
-        let countdown = COUNTDOWN_SECONDS;
-        let urlReachable = false;
-        let kioskUrl = '';
-        let checking = true;
+        const LOGO_WAIT = 5;
+        const RETRY_INTERVAL = 5;
+        let logoClicked = false;
+        let phase = 'logo';  // 'logo' → 'checking' → 'connected' | 'error'
 
         const statusEl = document.getElementById('status');
         const barEl = document.getElementById('countdown-bar');
         const netinfoEl = document.getElementById('netinfo');
         const logoEl = document.getElementById('logo');
+        const hintEl = document.getElementById('tap-hint');
 
-        // --- Logo tap → admin login ---
-        logoEl.addEventListener('click', function() {
+        // --- Logo tap → admin login (only during logo phase) ---
+        function onLogoTap(e) {
+            if (e) e.preventDefault();
+            logoClicked = true;
             window.location.href = '/login';
-        });
-        logoEl.addEventListener('touchend', function(e) {
-            e.preventDefault();
-            window.location.href = '/login';
-        });
+        }
+        logoEl.addEventListener('click', onLogoTap);
+        logoEl.addEventListener('touchend', onLogoTap);
 
         // --- Load network info ---
         function loadNetInfo() {
@@ -146,65 +144,101 @@
                 });
         }
 
-        // --- Check URL reachability ---
-        function checkUrl() {
+        // --- Phase 1: Logo countdown (5 seconds) ---
+        function startLogoCountdown() {
+            phase = 'logo';
+            let remaining = LOGO_WAIT;
+            barEl.style.transition = 'none';
+            barEl.style.width = '100%';
+
+            statusEl.innerHTML =
+                '<div class="status-text">Tap logo to open admin panel</div>' +
+                '<div class="status-detail">Checking target URL in <span id="logo-cd">' + remaining + '</span>s...</div>';
+
+            const interval = setInterval(function() {
+                if (logoClicked) { clearInterval(interval); return; }
+                remaining--;
+                const cdEl = document.getElementById('logo-cd');
+                if (cdEl) cdEl.textContent = remaining;
+                barEl.style.transition = 'width 1s linear';
+                barEl.style.width = ((remaining / LOGO_WAIT) * 100) + '%';
+
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    hintEl.style.opacity = '0';
+                    startUrlCheck();
+                }
+            }, 1000);
+        }
+
+        // --- Phase 2: Check URL reachability ---
+        function startUrlCheck() {
+            phase = 'checking';
             statusEl.innerHTML = '<div class="status-text">Checking connection...</div>';
+            barEl.style.transition = 'none';
+            barEl.style.width = '0';
+
             fetch('/kiosk/api/check-url')
                 .then(r => r.json())
                 .then(data => {
-                    kioskUrl = data.url;
+                    if (logoClicked) return;
                     if (data.reachable) {
-                        urlReachable = true;
+                        phase = 'connected';
                         statusEl.innerHTML =
                             '<div class="status-text status-ok">Connected</div>' +
-                            '<div class="status-detail">Redirecting in <span id="cd-num">' + countdown + '</span>s...</div>';
-                        startCountdown();
+                            '<div class="status-detail">Redirecting to ' + escapeHtml(data.url) + '</div>';
+                        barEl.style.width = '100%';
+                        window.location.href = data.url;
                     } else {
-                        urlReachable = false;
-                        statusEl.innerHTML =
-                            '<div class="status-error">' + escapeHtml(data.error || 'Connection failed') + '</div>' +
-                            '<div class="status-detail" style="margin-top:8px;">Target: ' + escapeHtml(data.url) + '</div>' +
-                            '<div class="status-detail" style="margin-top:12px;">Retrying in 10 seconds...</div>';
-                        setTimeout(checkUrl, 10000);
+                        showError(data);
                     }
-                    checking = false;
                 })
                 .catch(() => {
-                    statusEl.innerHTML =
-                        '<div class="status-error">Service not ready</div>' +
-                        '<div class="status-detail" style="margin-top:8px;">Retrying in 5 seconds...</div>';
-                    setTimeout(checkUrl, 5000);
+                    if (logoClicked) return;
+                    showError({url: '', error: 'Service not ready'});
                 });
         }
 
-        // --- Countdown timer ---
-        function startCountdown() {
-            barEl.style.width = '100%';
-            const interval = setInterval(function() {
-                countdown--;
-                const cdNum = document.getElementById('cd-num');
-                if (cdNum) cdNum.textContent = countdown;
-                barEl.style.width = ((countdown / COUNTDOWN_SECONDS) * 100) + '%';
+        // --- Phase 3: Error → retry with countdown ---
+        function showError(data) {
+            phase = 'error';
+            let remaining = RETRY_INTERVAL;
 
-                if (countdown <= 0) {
+            function render() {
+                statusEl.innerHTML =
+                    '<div class="status-error">' + escapeHtml(data.error || 'Connection failed') + '</div>' +
+                    (data.url ? '<div class="status-detail" style="margin-top:8px;">Target: ' + escapeHtml(data.url) + '</div>' : '') +
+                    '<div class="status-detail" style="margin-top:12px;">Retrying in <span class="retry-countdown" id="retry-cd">' + remaining + '</span>s...</div>';
+            }
+            render();
+
+            barEl.style.transition = 'none';
+            barEl.style.width = '100%';
+
+            const interval = setInterval(function() {
+                if (logoClicked) { clearInterval(interval); return; }
+                remaining--;
+                var cdEl = document.getElementById('retry-cd');
+                if (cdEl) cdEl.textContent = remaining;
+                barEl.style.transition = 'width 1s linear';
+                barEl.style.width = ((remaining / RETRY_INTERVAL) * 100) + '%';
+
+                if (remaining <= 0) {
                     clearInterval(interval);
-                    if (urlReachable && kioskUrl) {
-                        window.location.href = kioskUrl;
-                    }
+                    startUrlCheck();
                 }
             }, 1000);
         }
 
         function escapeHtml(text) {
-            const d = document.createElement('div');
+            var d = document.createElement('div');
             d.textContent = text;
             return d.innerHTML;
         }
 
         // --- Init ---
         loadNetInfo();
-        // Small delay for flask service to be fully ready on boot
-        setTimeout(checkUrl, 1000);
+        startLogoCountdown();
     })();
     </script>
 </body>

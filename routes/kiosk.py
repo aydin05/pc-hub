@@ -40,16 +40,18 @@ def _get_kiosk_pid():
     global _chromium_process
     if _chromium_process and _chromium_process.poll() is None:
         return _chromium_process.pid
-    try:
-        result = subprocess.run(
-            ['pgrep', '-f', 'chromium.*--kiosk'],
-            capture_output=True, text=True
-        )
-        pids = result.stdout.strip().split('\n')
-        if pids and pids[0]:
-            return int(pids[0])
-    except Exception:
-        pass
+    # Search for any chromium/chrome process (xinitrc uses --start-fullscreen)
+    for pattern in ['chromium', 'chrome']:
+        try:
+            result = subprocess.run(
+                ['pgrep', '-f', pattern],
+                capture_output=True, text=True
+            )
+            pids = result.stdout.strip().split('\n')
+            if pids and pids[0]:
+                return int(pids[0])
+        except Exception:
+            pass
     return None
 
 
@@ -108,7 +110,7 @@ def _watchdog_loop():
 
 
 def _kill_chromium():
-    """Kill Chromium process."""
+    """Kill Chromium process. The xinitrc loop will auto-relaunch it."""
     global _chromium_process
     if _chromium_process and _chromium_process.poll() is None:
         _chromium_process.terminate()
@@ -117,9 +119,10 @@ def _kill_chromium():
         except subprocess.TimeoutExpired:
             _chromium_process.kill()
         _chromium_process = None
-    else:
+    # Also kill any system-level chromium/chrome processes
+    for pattern in ['chromium', 'chrome']:
         try:
-            subprocess.run(['pkill', '-f', 'chromium.*--kiosk'], timeout=5)
+            subprocess.run(['pkill', '-f', pattern], timeout=5, capture_output=True)
         except Exception:
             pass
 
@@ -137,6 +140,7 @@ def kiosk_page():
         'devtools': get_setting('kiosk_devtools', '0'),
         'watchdog': get_setting('kiosk_watchdog', '1'),
         'cursor': get_setting('kiosk_cursor', '1'),
+        'check_timeout': get_setting('kiosk_check_timeout', '5'),
     }
     return render_template('kiosk.html', settings=settings)
 
@@ -192,9 +196,11 @@ def netinfo():
 def check_url():
     """Check if the configured kiosk URL is reachable — no auth required."""
     url = get_setting('kiosk_url', 'https://www.google.com')
+    timeout = int(get_setting('kiosk_check_timeout', '5'))
     try:
-        resp = urllib.request.urlopen(url, timeout=5)
-        return jsonify({'reachable': True, 'url': url, 'status': resp.getcode()})
+        resp = urllib.request.urlopen(url, timeout=timeout)
+        return jsonify({'reachable': True, 'url': url, 'status': resp.getcode(),
+                        'timeout': timeout})
     except urllib.error.HTTPError as e:
         return jsonify({'reachable': False, 'url': url, 'status': e.code,
                         'error': f'HTTP {e.code}: {e.reason}'})
@@ -312,6 +318,13 @@ def update_settings():
         enabled = bool(data['cursor'])
         set_setting('kiosk_cursor', '1' if enabled else '0')
         _apply_cursor_setting(enabled)
+    if 'check_timeout' in data:
+        try:
+            t = int(data['check_timeout'])
+            if 1 <= t <= 30:
+                set_setting('kiosk_check_timeout', str(t))
+        except (ValueError, TypeError):
+            pass
     if 'watchdog' in data:
         global _watchdog_running, _watchdog_thread
         enabled = bool(data['watchdog'])

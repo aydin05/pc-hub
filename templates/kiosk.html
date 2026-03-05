@@ -32,6 +32,11 @@
             <span>Show Cursor</span>
         </div>
     </div>
+    <div class="form-group">
+        <label class="form-label">URL Check Timeout (seconds)</label>
+        <input type="number" class="form-input" id="kiosk-check-timeout" value="{{ settings.check_timeout }}" min="1" max="30" style="max-width:120px;">
+        <small style="color:var(--text-secondary);display:block;margin-top:4px;">How long to wait when checking if the target URL is reachable (1–30s)</small>
+    </div>
     <div class="btn-group" style="margin-top:8px;">
         <button class="btn btn-primary" onclick="saveKioskSettings()">Save Settings</button>
         <button class="btn btn-warning" onclick="saveAndRestart()">Save &amp; Restart</button>
@@ -113,6 +118,7 @@ function saveKioskSettings() {
         url: $('#kiosk-url').value,
         watchdog: $('#kiosk-watchdog').checked,
         cursor: $('#kiosk-cursor').checked,
+        check_timeout: parseInt($('#kiosk-check-timeout').value) || 5,
     };
     api('/kiosk/api/settings', { method: 'POST', body: data }).then(() => {
         Toast.success('Settings saved');
@@ -124,6 +130,7 @@ function saveAndRestart() {
         url: $('#kiosk-url').value,
         watchdog: $('#kiosk-watchdog').checked,
         cursor: $('#kiosk-cursor').checked,
+        check_timeout: parseInt($('#kiosk-check-timeout').value) || 5,
     };
     api('/kiosk/api/settings', { method: 'POST', body: data }).then(() => {
         return api('/kiosk/api/restart', { method: 'POST' });
