@@ -153,7 +153,7 @@ function loadDevToolsTabs() {
         let html = '';
         data.tabs.forEach(function(tab, i) {
             const wsUrl = tab.webSocketDebuggerUrl ? tab.webSocketDebuggerUrl.replace('127.0.0.1', host).replace('localhost', host) : '';
-            const inspectUrl = wsUrl ? 'http://' + host + ':9222/devtools/inspector.html?ws=' + wsUrl.replace('ws://', '') : '';
+            const inspectUrl = wsUrl ? 'https://chrome-devtools-frontend.appspot.com/serve_rev/@main/inspector.html?ws=' + wsUrl.replace('ws://', '') : '';
             const title = tab.title || 'Tab ' + (i + 1);
             const tabUrl = tab.url || '';
             html += '<div style="padding:8px 0;border-bottom:1px solid var(--border);">';
