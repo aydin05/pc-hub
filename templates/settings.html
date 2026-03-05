@@ -71,6 +71,19 @@
     </div>
 </div>
 
+<div class="card mt-4">
+    <div class="card-title mb-4">Logo</div>
+    <p class="text-muted" style="font-size:12px;margin-bottom:12px;">Upload a custom logo to replace the default "K" on the loading screen and admin sidebar. Recommended: square image, PNG or SVG.</p>
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div id="logo-preview" style="width:64px;height:64px;border-radius:14px;background:linear-gradient(135deg,#5b6abf,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0;">K</div>
+        <div>
+            <input type="file" id="logo-file" accept="image/*" style="display:none;">
+            <button class="btn btn-primary" onclick="$('#logo-file').click()">Upload Logo</button>
+            <button class="btn btn-outline" id="logo-delete-btn" onclick="deleteLogo()" style="display:none;">Remove</button>
+        </div>
+    </div>
+</div>
+
 <button class="btn btn-primary btn-lg mt-4" onclick="saveSettings()">Save All Settings</button>
 {% endblock %}
 
@@ -86,6 +99,54 @@ function loadSettings() {
         $('#set-kiosk-watchdog').checked = data.kiosk_watchdog === '1';
         $('#set-screenshot-interval').value = data.screenshot_interval || '0';
     }).catch(err => Toast.error(err.message));
+
+    loadLogoPreview();
+}
+
+function loadLogoPreview() {
+    const preview = $('#logo-preview');
+    const delBtn = $('#logo-delete-btn');
+    const img = new Image();
+    img.onload = function() {
+        preview.innerHTML = '';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        preview.appendChild(img);
+        delBtn.style.display = '';
+    };
+    img.onerror = function() {
+        preview.innerHTML = 'K';
+        delBtn.style.display = 'none';
+    };
+    img.src = '/settings/api/logo?t=' + Date.now();
+}
+
+$('#logo-file').addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('logo', file);
+    fetch('/settings/api/logo', { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                Toast.success('Logo uploaded');
+                loadLogoPreview();
+            } else {
+                Toast.error(data.error || 'Upload failed');
+            }
+        })
+        .catch(() => Toast.error('Upload failed'));
+    this.value = '';
+});
+
+function deleteLogo() {
+    fetch('/settings/api/logo', { method: 'DELETE' })
+        .then(r => r.json())
+        .then(() => {
+            Toast.success('Logo removed');
+            loadLogoPreview();
+        })
+        .catch(() => Toast.error('Failed to remove logo'));
 }
 
 function saveSettings() {

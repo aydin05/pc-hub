@@ -92,7 +92,7 @@
 <body>
     <div class="countdown-bar" id="countdown-bar"></div>
 
-    <div class="logo" id="logo" title="Tap to open admin panel">K</div>
+    <div class="logo" id="logo" title="Tap to open admin panel"><span id="logo-fallback">K</span></div>
 
     <div class="status" id="status">
         <div class="status-text">Starting up...</div>
@@ -236,7 +236,21 @@
             return d.innerHTML;
         }
 
+        // --- Load custom logo ---
+        function loadLogo() {
+            var img = new Image();
+            img.onload = function() {
+                var el = document.getElementById('logo');
+                var fallback = document.getElementById('logo-fallback');
+                if (fallback) fallback.style.display = 'none';
+                img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:28px;';
+                el.insertBefore(img, el.firstChild);
+            };
+            img.src = '/settings/api/logo?t=' + Date.now();
+        }
+
         // --- Init ---
+        loadLogo();
         loadNetInfo();
         startLogoCountdown();
     })();
