@@ -17,9 +17,14 @@
     </div>
     <div class="app-layout">
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-logo"><img src="/settings/api/logo" onload="this.nextSibling.style.display='none'" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" alt="Logo"><span>K</span></div>
-                <div class="sidebar-title">Kiosk Manager</div>
+            <div class="sidebar-header sidebar-header-logo">
+                <div class="sidebar-logo-wrap" id="sidebar-logo-wrap">
+                    <img src="/settings/api/logo" id="sidebar-logo-img"
+                         onload="this.style.display='';document.getElementById('sidebar-logo-fallback').style.display='none';"
+                         onerror="this.style.display='none';document.getElementById('sidebar-logo-fallback').style.display='';"
+                         style="display:none;max-width:140px;max-height:48px;width:auto;height:auto;object-fit:contain;" alt="Logo">
+                    <div id="sidebar-logo-fallback" class="sidebar-logo">K</div>
+                </div>
             </div>
             <nav class="sidebar-nav">
                 <div class="nav-section">
