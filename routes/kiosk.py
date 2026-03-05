@@ -2,6 +2,7 @@ import subprocess
 import signal
 import os
 import re
+import json
 import threading
 import time
 import logging
@@ -292,6 +293,30 @@ def _write_kiosk_url_file(url):
         logger.info('Wrote kiosk URL to %s', url_file)
     except Exception as e:
         logger.warning('Could not write ~/.kiosk-url: %s', e)
+
+
+@kiosk_bp.route('/api/devtools-tabs')
+@login_required
+def devtools_tabs():
+    """Proxy Chrome's remote debugging /json endpoint to list open tabs."""
+    try:
+        req = urllib.request.Request('http://127.0.0.1:9222/json')
+        resp = urllib.request.urlopen(req, timeout=3)
+        tabs = json.loads(resp.read().decode())
+        # Filter to only page-type targets
+        pages = []
+        for tab in tabs:
+            if tab.get('type') == 'page':
+                pages.append({
+                    'title': tab.get('title', 'Untitled'),
+                    'url': tab.get('url', ''),
+                    'id': tab.get('id', ''),
+                    'devtoolsFrontendUrl': tab.get('devtoolsFrontendUrl', ''),
+                    'webSocketDebuggerUrl': tab.get('webSocketDebuggerUrl', ''),
+                })
+        return jsonify({'success': True, 'tabs': pages})
+    except Exception as e:
+        return jsonify({'success': False, 'tabs': [], 'error': str(e)})
 
 
 @kiosk_bp.route('/api/cursor', methods=['POST'])

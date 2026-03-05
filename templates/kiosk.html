@@ -68,12 +68,9 @@
     <div class="card">
         <div class="card-header">
             <div class="card-title">Remote Debugging</div>
+            <button class="btn btn-sm btn-outline" onclick="loadDevToolsTabs()">Refresh</button>
         </div>
-        <p style="color:var(--text-secondary);margin-bottom:12px;">Chrome DevTools is on port <strong>9222</strong>.</p>
-        <div class="form-group">
-            <input type="text" class="form-input" id="devtools-url" readonly style="font-family:monospace;font-size:13px;">
-        </div>
-        <a id="devtools-link" href="#" target="_blank" class="btn btn-outline">Open DevTools</a>
+        <div id="devtools-tabs" style="color:var(--text-secondary);margin-bottom:12px;">Loading...</div>
     </div>
 
     <div class="card">
@@ -140,16 +137,43 @@ function saveAndRestart() {
     }).catch(err => Toast.error(err.message));
 }
 
+function loadDevToolsTabs() {
+    const el = $('#devtools-tabs');
+    el.innerHTML = '<span style="color:var(--text-secondary);">Loading...</span>';
+    api('/kiosk/api/devtools-tabs').then(data => {
+        if (!data.success) {
+            el.innerHTML = '<span style="color:var(--danger);">Could not connect to Chrome DevTools on port 9222.<br><small>' + (data.error || '') + '</small></span>';
+            return;
+        }
+        if (data.tabs.length === 0) {
+            el.innerHTML = '<span style="color:var(--text-secondary);">No open tabs found.</span>';
+            return;
+        }
+        const host = location.hostname;
+        let html = '';
+        data.tabs.forEach(function(tab, i) {
+            const wsUrl = tab.webSocketDebuggerUrl ? tab.webSocketDebuggerUrl.replace('127.0.0.1', host).replace('localhost', host) : '';
+            const inspectUrl = wsUrl ? 'http://' + host + ':9222/devtools/inspector.html?ws=' + wsUrl.replace('ws://', '') : '';
+            const title = tab.title || 'Tab ' + (i + 1);
+            const tabUrl = tab.url || '';
+            html += '<div style="padding:8px 0;border-bottom:1px solid var(--border);">';
+            html += '<div style="font-weight:600;font-size:13px;margin-bottom:2px;">' + title + '</div>';
+            html += '<div style="font-size:11px;color:var(--text-secondary);word-break:break-all;margin-bottom:4px;">' + tabUrl + '</div>';
+            if (inspectUrl) {
+                html += '<a href="' + inspectUrl + '" target="_blank" class="btn btn-sm btn-outline" style="font-size:11px;">Inspect</a>';
+            }
+            html += '</div>';
+        });
+        el.innerHTML = html;
+    }).catch(err => {
+        el.innerHTML = '<span style="color:var(--danger);">DevTools not available. Is Chrome running with --remote-debugging-port=9222?</span>';
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     refreshStatus();
     setInterval(refreshStatus, 10000);
-
-    const host = location.hostname;
-    const devtoolsUrl = 'http://' + host + ':9222';
-    const dtInput = $('#devtools-url');
-    const dtLink = $('#devtools-link');
-    if (dtInput) dtInput.value = devtoolsUrl;
-    if (dtLink) dtLink.href = devtoolsUrl;
+    loadDevToolsTabs();
 });
 </script>
 {% endblock %}
