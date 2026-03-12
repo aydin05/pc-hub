@@ -137,17 +137,8 @@ def set_schedule_reboot():
         if not re.match(r'^[\d,\*\-]+$', days):
             return jsonify({'error': 'Invalid days format'}), 400
 
-        # Build reboot command from sysdetect
-        sys = get_sys()
-        reboot_cmd = sys.get_reboot_cmd()
-        if not reboot_cmd:
-            return jsonify({'error': 'Reboot command not available'}), 500
-        
-        # Root's crontab runs as root, so strip 'sudo' prefix
-        if reboot_cmd[0] == 'sudo':
-            reboot_cmd = reboot_cmd[1:]
-        cmd_str = ' '.join(reboot_cmd)
-        cron_line = f'{minute} {hour} * * {days} {cmd_str} {CRON_MARKER}'
+        # Root's crontab — use sudo reboot which works reliably
+        cron_line = f'{minute} {hour} * * {days} sudo reboot {CRON_MARKER}'
         lines.append(cron_line)
         logger.info('Scheduled reboot: %s', cron_line)
 
