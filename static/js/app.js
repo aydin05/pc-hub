@@ -167,6 +167,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+/* === Sidebar Quick Actions === */
+function sidebarRestartChrome() {
+    Modal.show('Restart Chrome',
+        'Are you sure you want to <strong>restart Chrome</strong>?',
+        () => {
+            api('/kiosk/api/restart', { method: 'POST' }).then(() => {
+                Toast.success('Chrome is restarting...');
+            }).catch(err => Toast.error(err.message));
+        },
+        'Restart', 'btn-warning'
+    );
+}
+
+function sidebarReboot() {
+    Modal.show('Reboot Kiosk',
+        'Are you sure you want to <strong>reboot</strong> the kiosk? All active sessions will be terminated.',
+        () => {
+            api('/system/api/reboot', { method: 'POST', body: { confirm: true } }).then(() => {
+                Toast.info('Kiosk is rebooting...');
+            }).catch(err => Toast.error(err.message));
+        },
+        'Reboot', 'btn-warning'
+    );
+}
+
+function sidebarShutdown() {
+    Modal.show('Shutdown Kiosk',
+        'Are you sure you want to <strong>shut down</strong> the kiosk? This will power off the machine.',
+        () => {
+            api('/system/api/shutdown', { method: 'POST', body: { confirm: true } }).then(() => {
+                Toast.info('Kiosk is shutting down...');
+            }).catch(err => Toast.error(err.message));
+        },
+        'Shutdown', 'btn-danger'
+    );
+}
+
 /* === Live Clock === */
 function startClock(elementId) {
     const el = document.getElementById(elementId);
