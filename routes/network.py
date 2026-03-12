@@ -210,14 +210,18 @@ def _configure_nmcli(nmcli, iface, method, data):
         gateway = data.get('gateway', '')
         dns = data.get('dns', '')
 
+        subnet = data.get('subnet', '24')
+        if not re.match(r'^\d{1,2}$', subnet) or not (0 <= int(subnet) <= 32):
+            return jsonify({'error': 'Invalid subnet mask'}), 400
+
         if not SAFE_IP_RE.match(ip_addr):
             return jsonify({'error': 'Invalid IP address'}), 400
         if gateway and not SAFE_IP_RE.match(gateway):
             return jsonify({'error': 'Invalid gateway'}), 400
 
-        # nmcli requires CIDR notation — default to /24 if not provided
+        # nmcli requires CIDR notation
         if '/' not in ip_addr:
-            ip_addr = ip_addr + '/24'
+            ip_addr = f'{ip_addr}/{subnet}'
 
         cmd = [
             'sudo', nmcli, 'con', 'mod', conn_name,
