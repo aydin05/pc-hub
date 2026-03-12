@@ -14,6 +14,23 @@ SAFE_IP_RE = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?$')
 SAFE_IFACE_RE = re.compile(r'^[a-zA-Z0-9\-_:\.]+$')
 
 
+def _subnet_mask_to_cidr(mask):
+    """Convert subnet mask (e.g. 255.255.255.0) to CIDR prefix (e.g. 24)."""
+    try:
+        octets = [int(o) for o in mask.split('.')]
+        if len(octets) != 4 or any(o < 0 or o > 255 for o in octets):
+            return None
+        binary = ''.join(format(o, '08b') for o in octets)
+        # Count consecutive 1s from the left
+        cidr = len(binary) - len(binary.lstrip('1'))
+        # Verify it's a valid mask (all 1s followed by all 0s)
+        if binary != ('1' * cidr + '0' * (32 - cidr)):
+            return None
+        return cidr
+    except (ValueError, AttributeError):
+        return None
+
+
 def _run_cmd(cmd, timeout=10):
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -209,19 +226,21 @@ def _configure_nmcli(nmcli, iface, method, data):
         ip_addr = data.get('ip', '')
         gateway = data.get('gateway', '')
         dns = data.get('dns', '')
-
-        subnet = data.get('subnet', '24')
-        if not re.match(r'^\d{1,2}$', subnet) or not (0 <= int(subnet) <= 32):
-            return jsonify({'error': 'Invalid subnet mask'}), 400
+        subnet_mask = data.get('subnet', '255.255.255.0')
 
         if not SAFE_IP_RE.match(ip_addr):
             return jsonify({'error': 'Invalid IP address'}), 400
         if gateway and not SAFE_IP_RE.match(gateway):
             return jsonify({'error': 'Invalid gateway'}), 400
 
+        # Convert subnet mask to CIDR prefix
+        cidr = _subnet_mask_to_cidr(subnet_mask)
+        if cidr is None:
+            return jsonify({'error': 'Invalid subnet mask'}), 400
+
         # nmcli requires CIDR notation
         if '/' not in ip_addr:
-            ip_addr = f'{ip_addr}/{subnet}'
+            ip_addr = f'{ip_addr}/{cidr}'
 
         cmd = [
             'sudo', nmcli, 'con', 'mod', conn_name,
