@@ -102,7 +102,8 @@ def get_schedule_reboot():
     lines = _get_crontab()
     for line in lines:
         if CRON_MARKER in line:
-            # Parse: MM HH * * DOW /sbin/reboot # kiosk-manager-auto-reboot
+            # Parse: MM HH * * DOW <reboot-command> # kiosk-manager-auto-reboot
+            # Match minute, hour, day-of-month (always *), month (always *), day-of-week
             match = re.match(r'^(\d+)\s+(\d+)\s+\*\s+\*\s+(\S+)\s+', line)
             if match:
                 minute, hour, dow = match.group(1), match.group(2), match.group(3)
@@ -136,7 +137,15 @@ def set_schedule_reboot():
         if not re.match(r'^[\d,\*\-]+$', days):
             return jsonify({'error': 'Invalid days format'}), 400
 
-        cron_line = f'{minute} {hour} * * {days} /sbin/reboot {CRON_MARKER}'
+        # Build reboot command from sysdetect
+        sys = get_sys()
+        reboot_cmd = sys.get_reboot_cmd()
+        if not reboot_cmd:
+            return jsonify({'error': 'Reboot command not available'}), 500
+        
+        # For cron, we need the full command (sudo already included in get_reboot_cmd)
+        cmd_str = ' '.join(reboot_cmd)
+        cron_line = f'{minute} {hour} * * {days} {cmd_str} {CRON_MARKER}'
         lines.append(cron_line)
         logger.info('Scheduled reboot: %s', cron_line)
 
