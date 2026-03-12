@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import zipfile
 import logging
-from flask import Blueprint, render_template, request, jsonify, Response
+from flask import Blueprint, render_template, request, jsonify, Response, current_app
 from auth_utils import login_required
 from config import BASE_DIR, VERSION_FILE
 from sysdetect import get_sys

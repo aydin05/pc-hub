@@ -143,7 +143,9 @@ def set_schedule_reboot():
         if not reboot_cmd:
             return jsonify({'error': 'Reboot command not available'}), 500
         
-        # For cron, we need the full command (sudo already included in get_reboot_cmd)
+        # Root's crontab runs as root, so strip 'sudo' prefix
+        if reboot_cmd[0] == 'sudo':
+            reboot_cmd = reboot_cmd[1:]
         cmd_str = ' '.join(reboot_cmd)
         cron_line = f'{minute} {hour} * * {days} {cmd_str} {CRON_MARKER}'
         lines.append(cron_line)
