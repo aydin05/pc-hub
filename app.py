@@ -42,7 +42,7 @@ def create_app():
     from routes.diagnostics import diagnostics_bp
     from routes.display import display_bp
     from routes.screenshots import screenshots_bp
-    from routes.system import system_bp
+    from routes.system import system_bp, start_reboot_scheduler
     from routes.datetime_tz import datetime_bp
     from routes.update import update_bp
     from routes.settings import settings_bp
@@ -60,6 +60,8 @@ def create_app():
     app.register_blueprint(datetime_bp, url_prefix='/datetime')
     app.register_blueprint(update_bp, url_prefix='/update')
     app.register_blueprint(settings_bp, url_prefix='/settings')
+
+    start_reboot_scheduler()
 
     @app.route('/')
     def index():

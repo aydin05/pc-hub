@@ -1,17 +1,22 @@
 import subprocess
 import os
 import re
+import json
+import time
+import threading
 import tempfile
 import logging
+from datetime import datetime
 from flask import Blueprint, render_template, request, jsonify, current_app
 from auth_utils import login_required
 from sysdetect import get_sys
+from config import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
 system_bp = Blueprint('system', __name__)
 
-CRON_MARKER = '# kiosk-manager-auto-reboot'
+SCHEDULE_FILE = os.path.join(BASE_DIR, 'data', 'schedule.json')
 
 
 @system_bp.route('/')
@@ -69,82 +74,115 @@ def info():
     })
 
 
-# ── Scheduled Reboot ─────────────────────────────────────────
+# ── Scheduled Reboot (JSON file + background thread) ─────────
 
-def _get_crontab():
-    """Read current root crontab lines."""
+def _read_schedule():
+    """Read schedule from JSON file."""
+    default = {'enabled': False, 'hour': 3, 'minute': 0, 'days': '*'}
+    if not os.path.exists(SCHEDULE_FILE):
+        return default
     try:
-        result = subprocess.run(
-            ['sudo', 'crontab', '-l'],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode != 0:
-            return []
-        return result.stdout.strip().split('\n')
-    except Exception:
-        return []
+        with open(SCHEDULE_FILE, 'r') as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        logger.error('Error reading schedule.json: %s', e)
+        return default
 
 
-def _set_crontab(lines):
-    """Write root crontab."""
-    content = '\n'.join(lines) + '\n'
-    proc = subprocess.run(
-        ['sudo', 'crontab', '-'],
-        input=content, capture_output=True, text=True, timeout=5
-    )
-    return proc.returncode == 0
+def _write_schedule(data):
+    """Write schedule to JSON file."""
+    os.makedirs(os.path.dirname(SCHEDULE_FILE), exist_ok=True)
+    try:
+        with open(SCHEDULE_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+        return True
+    except Exception as e:
+        logger.error('Error writing schedule.json: %s', e)
+        return False
+
+
+def _check_reboot_time():
+    """Background thread: check every 30s if reboot time is reached."""
+    last_reboot_minute = None
+    while True:
+        try:
+            schedule = _read_schedule()
+            if schedule.get('enabled'):
+                now = datetime.now()
+                current_hour = now.hour
+                current_minute = now.minute
+                current_dow = now.isoweekday() % 7  # 0=Sun, 1=Mon, ..., 6=Sat
+
+                sched_hour = schedule.get('hour', 3)
+                sched_minute = schedule.get('minute', 0)
+                days = schedule.get('days', '*')
+
+                # Check if today matches the day-of-week schedule
+                day_match = False
+                if days == '*':
+                    day_match = True
+                else:
+                    allowed = set()
+                    for part in days.split(','):
+                        part = part.strip()
+                        if '-' in part:
+                            start, end = part.split('-', 1)
+                            allowed.update(range(int(start), int(end) + 1))
+                        else:
+                            allowed.add(int(part))
+                    day_match = current_dow in allowed
+
+                if day_match and current_hour == sched_hour and current_minute == sched_minute:
+                    # Prevent rebooting multiple times in the same minute
+                    reboot_key = f'{now.year}-{now.month}-{now.day}-{current_hour}-{current_minute}'
+                    if last_reboot_minute != reboot_key:
+                        last_reboot_minute = reboot_key
+                        logger.info('Auto-reboot time reached (%02d:%02d). Rebooting...', sched_hour, sched_minute)
+                        subprocess.run(['sudo', 'reboot'])
+        except Exception as e:
+            logger.error('Error in reboot check thread: %s', e)
+        time.sleep(30)
+
+
+def start_reboot_scheduler():
+    """Start the background reboot checker thread."""
+    t = threading.Thread(target=_check_reboot_time, daemon=True)
+    t.start()
+    logger.info('Reboot scheduler thread started')
 
 
 @system_bp.route('/api/schedule-reboot')
 @login_required
 def get_schedule_reboot():
-    """Get current auto-reboot schedule from crontab."""
-    lines = _get_crontab()
-    for line in lines:
-        if CRON_MARKER in line:
-            # Parse: MM HH * * DOW <reboot-command> # kiosk-manager-auto-reboot
-            # Match minute, hour, day-of-month (always *), month (always *), day-of-week
-            match = re.match(r'^(\d+)\s+(\d+)\s+\*\s+\*\s+(\S+)\s+', line)
-            if match:
-                minute, hour, dow = match.group(1), match.group(2), match.group(3)
-                return jsonify({
-                    'enabled': True,
-                    'hour': int(hour),
-                    'minute': int(minute),
-                    'days': dow,
-                })
-    return jsonify({'enabled': False, 'hour': 3, 'minute': 0, 'days': '*'})
+    """Get current auto-reboot schedule."""
+    return jsonify(_read_schedule())
 
 
 @system_bp.route('/api/schedule-reboot', methods=['POST'])
 @login_required
 def set_schedule_reboot():
-    """Set or update auto-reboot schedule in crontab."""
+    """Set or update auto-reboot schedule."""
     data = request.get_json()
     enabled = data.get('enabled', False)
 
-    # Remove existing auto-reboot entry
-    lines = _get_crontab()
-    lines = [l for l in lines if CRON_MARKER not in l and l.strip()]
+    schedule = {
+        'enabled': enabled,
+        'hour': int(data.get('hour', 3)),
+        'minute': int(data.get('minute', 0)),
+        'days': data.get('days', '*').strip() or '*',
+    }
 
     if enabled:
-        hour = int(data.get('hour', 3))
-        minute = int(data.get('minute', 0))
-        days = data.get('days', '*').strip() or '*'
-
-        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        if not (0 <= schedule['hour'] <= 23 and 0 <= schedule['minute'] <= 59):
             return jsonify({'error': 'Invalid time'}), 400
-        if not re.match(r'^[\d,\*\-]+$', days):
+        if not re.match(r'^[\d,\*\-]+$', schedule['days']):
             return jsonify({'error': 'Invalid days format'}), 400
 
-        # Root's crontab — use sudo reboot which works reliably
-        cron_line = f'{minute} {hour} * * {days} sudo reboot {CRON_MARKER}'
-        lines.append(cron_line)
-        logger.info('Scheduled reboot: %s', cron_line)
+    if not _write_schedule(schedule):
+        return jsonify({'error': 'Failed to save schedule'}), 500
 
-    if not _set_crontab(lines):
-        return jsonify({'error': 'Failed to update crontab'}), 500
-
+    logger.info('Schedule updated: %s', schedule)
     return jsonify({'success': True, 'enabled': enabled})
 
 
