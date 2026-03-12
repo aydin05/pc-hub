@@ -408,20 +408,38 @@ def init_kiosk_ws(sock):
     @sock.route('/kiosk/devtools-ws/<page_id>')
     def devtools_ws_proxy(ws, page_id):
         """Bidirectional WebSocket proxy: browser <-> Chrome DevTools."""
-        chrome_url = f'ws://127.0.0.1:9222/devtools/page/{page_id}'
         chrome_ws = None
+
+        def _try_connect(pid):
+            url = f'ws://127.0.0.1:9222/devtools/page/{pid}'
+            c = ws_client.WebSocket()
+            c.connect(url, timeout=5)
+            return c
+
+        # Try the requested page ID first, fallback to first available page
         try:
-            chrome_ws = ws_client.WebSocket()
-            chrome_ws.connect(chrome_url, timeout=5)
-        except Exception as e:
-            logger.warning('Could not connect to Chrome DevTools WS: %s', e)
+            chrome_ws = _try_connect(page_id)
+        except Exception:
+            logger.info('Page ID %s stale, looking up current targets...', page_id)
             try:
-                ws.send(json.dumps({
-                    'error': f'Cannot connect to Chrome debug port: {e}'
-                }))
-            except Exception:
-                pass
-            return
+                req = urllib.request.Request('http://127.0.0.1:9222/json')
+                resp = urllib.request.urlopen(req, timeout=3)
+                tabs = json.loads(resp.read().decode())
+                pages = [t for t in tabs if t.get('type') == 'page']
+                if pages:
+                    chrome_ws = _try_connect(pages[0]['id'])
+                    logger.info('Resolved to page ID %s', pages[0]['id'])
+                else:
+                    raise RuntimeError('No page targets available')
+            except Exception as e2:
+                logger.warning('Could not connect to Chrome DevTools WS: %s', e2)
+                try:
+                    ws.send(json.dumps({
+                        'error': f'Cannot connect to Chrome debug port: {e2}'
+                    }))
+                except Exception:
+                    pass
+                return
 
         stop = threading.Event()
 
