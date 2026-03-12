@@ -265,23 +265,23 @@ def kill():
 
 
 def _apply_cursor_setting(show_cursor):
-    """Show or hide the cursor on the display."""
+    """Show or hide the cursor on the display using xsetroot."""
     env = get_sys().get_env_with_display()
     try:
         if show_cursor:
-            # Kill unclutter to show cursor
-            subprocess.run(['pkill', '-f', 'unclutter'], timeout=5,
-                           capture_output=True)
-            logger.info('Cursor enabled (unclutter killed)')
+            subprocess.run(['xsetroot', '-cursor_name', 'left_ptr'],
+                           env=env, timeout=5, capture_output=True)
+            logger.info('Cursor enabled (xsetroot default)')
         else:
-            # Kill any existing unclutter first, then restart
-            subprocess.run(['pkill', '-f', 'unclutter'], timeout=5,
-                           capture_output=True)
-            time.sleep(0.5)
-            subprocess.Popen(['unclutter', '-idle', '0', '-root'],
-                             env=env, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-            logger.info('Cursor hidden (unclutter started with idle=0)')
+            home = env.get('HOME', os.path.expanduser('~'))
+            blank = os.path.join(home, '.blank_cursor.xbm')
+            if not os.path.isfile(blank):
+                with open(blank, 'w') as f:
+                    f.write('#define b_width 1\n#define b_height 1\n'
+                            'static unsigned char b_bits[] = { 0x00 };\n')
+            subprocess.run(['xsetroot', '-cursor', blank, blank],
+                           env=env, timeout=5, capture_output=True)
+            logger.info('Cursor hidden (xsetroot blank)')
     except Exception as e:
         logger.warning('Could not apply cursor setting: %s', e)
 

@@ -116,7 +116,7 @@ install_packages() {
                 log "Installing X11, Openbox, Chromium, and kiosk tools..."
                 apt-get install -y \
                     xorg openbox \
-                    scrot x11-xserver-utils unclutter 2>/dev/null || true
+                    scrot x11-xserver-utils 2>/dev/null || true
                 apt-get install -y chromium 2>/dev/null || \
                     apt-get install -y chromium-browser 2>/dev/null || true
             else
@@ -129,7 +129,6 @@ install_packages() {
                     apt-get install -y x11-xserver-utils 2>/dev/null || true
                 fi
                 apt-get install -y chromium-browser 2>/dev/null || apt-get install -y chromium 2>/dev/null || true
-                apt-get install -y unclutter 2>/dev/null || true
             fi
             ;;
         dnf|yum)
@@ -139,7 +138,7 @@ install_packages() {
             if [ "$HEADLESS" = true ]; then
                 log "Installing X11, Openbox, Chromium, and kiosk tools..."
                 $PKG_MGR install -y xorg-x11-server-Xorg xorg-x11-xinit openbox 2>/dev/null || true
-                $PKG_MGR install -y scrot xrandr unclutter 2>/dev/null || true
+                $PKG_MGR install -y scrot xrandr 2>/dev/null || true
                 $PKG_MGR install -y chromium 2>/dev/null || true
             else
                 if [ "$DISPLAY_SERVER" = "wayland" ]; then
@@ -150,7 +149,6 @@ install_packages() {
                     $PKG_MGR install -y xrandr 2>/dev/null || $PKG_MGR install -y xorg-x11-server-utils 2>/dev/null || true
                 fi
                 $PKG_MGR install -y chromium 2>/dev/null || $PKG_MGR install -y chromium-browser 2>/dev/null || true
-                $PKG_MGR install -y unclutter 2>/dev/null || true
             fi
             ;;
         pacman)
@@ -160,7 +158,7 @@ install_packages() {
             if [ "$HEADLESS" = true ]; then
                 log "Installing X11, Openbox, Chromium, and kiosk tools..."
                 pacman -S --noconfirm xorg-server xorg-xinit openbox 2>/dev/null || true
-                pacman -S --noconfirm scrot xorg-xrandr unclutter 2>/dev/null || true
+                pacman -S --noconfirm scrot xorg-xrandr 2>/dev/null || true
                 pacman -S --noconfirm chromium 2>/dev/null || true
             else
                 if [ "$DISPLAY_SERVER" = "wayland" ]; then
@@ -171,7 +169,6 @@ install_packages() {
                     pacman -S --noconfirm xorg-xrandr 2>/dev/null || true
                 fi
                 pacman -S --noconfirm chromium 2>/dev/null || true
-                pacman -S --noconfirm unclutter 2>/dev/null || true
             fi
             ;;
     esac
@@ -436,8 +433,10 @@ xset s off
 xset -dpms
 xset s noblank
 
-# Hide cursor after 3 seconds of inactivity
-unclutter -idle 3 -root &
+# Hide cursor using a blank X11 cursor bitmap
+BLANK_CUR="$HOME/.blank_cursor.xbm"
+printf '#define b_width 1\n#define b_height 1\nstatic unsigned char b_bits[] = { 0x00 };\n' > "$BLANK_CUR"
+xsetroot -cursor "$BLANK_CUR" "$BLANK_CUR"
 
 # Start openbox window manager
 openbox-session &
