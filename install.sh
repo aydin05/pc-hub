@@ -461,6 +461,7 @@ CHROME_FLAGS=(
     --check-for-update-interval=31536000
     --remote-debugging-port=9222
     --remote-debugging-address=0.0.0.0
+    --remote-allow-origins=*
 )
 
 # Running as root requires --no-sandbox; --test-type suppresses the warning bar
