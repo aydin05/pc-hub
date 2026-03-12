@@ -264,31 +264,27 @@ def kill():
     return jsonify({'success': True})
 
 
-_XFIXES_SCRIPT = '''
-import ctypes
-x = ctypes.cdll.LoadLibrary("libX11.so.6")
-f = ctypes.cdll.LoadLibrary("libXfixes.so.3")
-d = x.XOpenDisplay(None)
-if d:
-    f.{func}(d, x.XDefaultRootWindow(d))
-    x.XSync(d, False)
-    x.XCloseDisplay(d)
-'''
-
-
 def _apply_cursor_setting(show_cursor):
     """Show or hide the cursor. X is started with -nocursor by default;
     XFixes can override that at runtime to show/hide the cursor."""
+    import ctypes
     env = get_sys().get_env_with_display()
-    func = 'XFixesShowCursor' if show_cursor else 'XFixesHideCursor'
-    script = _XFIXES_SCRIPT.format(func=func)
+    display = env.get('DISPLAY', ':0')
     try:
-        result = subprocess.run(['python3', '-c', script],
-                                env=env, timeout=5, capture_output=True, text=True)
-        if result.returncode != 0:
-            logger.warning('XFixes cursor %s failed: %s', func, result.stderr.strip())
+        xlib = ctypes.cdll.LoadLibrary('libX11.so.6')
+        xfixes = ctypes.cdll.LoadLibrary('libXfixes.so.3')
+        d = xlib.XOpenDisplay(display.encode())
+        if not d:
+            logger.warning('Could not open X display %s', display)
+            return
+        root = xlib.XDefaultRootWindow(d)
+        if show_cursor:
+            xfixes.XFixesShowCursor(d, root)
         else:
-            logger.info('Cursor %s (XFixes)', 'shown' if show_cursor else 'hidden')
+            xfixes.XFixesHideCursor(d, root)
+        xlib.XSync(d, False)
+        xlib.XCloseDisplay(d)
+        logger.info('Cursor %s (XFixes)', 'shown' if show_cursor else 'hidden')
     except Exception as e:
         logger.warning('Could not apply cursor setting: %s', e)
 
