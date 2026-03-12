@@ -277,7 +277,8 @@ if d:
 
 
 def _apply_cursor_setting(show_cursor):
-    """Show or hide the cursor using X11 XFixes extension."""
+    """Show or hide the cursor. X is started with -nocursor by default;
+    XFixes can override that at runtime to show/hide the cursor."""
     env = get_sys().get_env_with_display()
     func = 'XFixesShowCursor' if show_cursor else 'XFixesHideCursor'
     script = _XFIXES_SCRIPT.format(func=func)

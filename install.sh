@@ -433,18 +433,6 @@ xset s off
 xset -dpms
 xset s noblank
 
-# Hide cursor using X11 XFixes extension (works inside Chrome too)
-python3 -c '
-import ctypes
-x = ctypes.cdll.LoadLibrary("libX11.so.6")
-f = ctypes.cdll.LoadLibrary("libXfixes.so.3")
-d = x.XOpenDisplay(None)
-if d:
-    f.XFixesHideCursor(d, x.XDefaultRootWindow(d))
-    x.XSync(d, False)
-    x.XCloseDisplay(d)
-' 2>/dev/null &
-
 # Start openbox window manager
 openbox-session &
 WM_PID=$!
@@ -523,7 +511,7 @@ XINITRC
 
 # Auto-start X11 on tty1 (kiosk mode)
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-    exec startx
+    exec startx -- -nocursor
 fi
 PROFILE
 
