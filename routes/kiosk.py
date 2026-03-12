@@ -367,9 +367,38 @@ def update_settings():
 @kiosk_bp.route('/inspector')
 @login_required
 def inspector_page():
-    """Serve the built-in DevTools inspector page."""
+    """Serve the lightweight built-in DevTools inspector (fallback)."""
     page_id = request.args.get('page', '')
     return render_template('devtools_inspector.html', page_id=page_id)
+
+
+_DEVTOOLS_MIME = {
+    '.html': 'text/html', '.js': 'application/javascript',
+    '.css': 'text/css', '.json': 'application/json',
+    '.png': 'image/png', '.svg': 'image/svg+xml',
+    '.wasm': 'application/wasm',
+}
+
+
+@kiosk_bp.route('/devtools/<path:path>')
+@login_required
+def devtools_frontend_proxy(path):
+    """Proxy Chrome's built-in DevTools frontend from port 9222."""
+    try:
+        chrome_url = f'http://127.0.0.1:9222/devtools/{path}'
+        req = urllib.request.Request(chrome_url)
+        resp = urllib.request.urlopen(req, timeout=5)
+        content = resp.read()
+        ct = resp.headers.get('Content-Type')
+        if not ct:
+            ext = os.path.splitext(path)[1].lower()
+            ct = _DEVTOOLS_MIME.get(ext, 'application/octet-stream')
+        return content, 200, {
+            'Content-Type': ct,
+            'Cache-Control': 'public, max-age=86400',
+        }
+    except Exception as e:
+        return jsonify({'error': f'DevTools frontend not available: {e}'}), 502
 
 
 def init_kiosk_ws(sock):

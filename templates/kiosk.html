@@ -152,14 +152,19 @@ function loadDevToolsTabs() {
         let html = '';
         data.tabs.forEach(function(tab, i) {
             const pageId = tab.id || '';
-            const inspectUrl = pageId ? '/kiosk/inspector?page=' + encodeURIComponent(pageId) : '';
+            const wsParam = (location.protocol === 'https:' ? 'wss' : 'ws') + '=' + location.host + '/kiosk/devtools-ws/' + pageId;
+            const fullInspect = pageId ? '/kiosk/devtools/inspector.html?' + wsParam : '';
+            const liteInspect = pageId ? '/kiosk/inspector?page=' + encodeURIComponent(pageId) : '';
             const title = tab.title || 'Tab ' + (i + 1);
             const tabUrl = tab.url || '';
             html += '<div style="padding:8px 0;border-bottom:1px solid var(--border);">';
             html += '<div style="font-weight:600;font-size:13px;margin-bottom:2px;">' + title + '</div>';
             html += '<div style="font-size:11px;color:var(--text-secondary);word-break:break-all;margin-bottom:4px;">' + tabUrl + '</div>';
-            if (inspectUrl) {
-                html += '<a href="' + inspectUrl + '" target="_blank" class="btn btn-sm btn-outline" style="font-size:11px;">Inspect</a>';
+            if (pageId) {
+                html += '<div style="display:flex;gap:6px;">';
+                html += '<a href="' + fullInspect + '" target="_blank" class="btn btn-sm btn-outline" style="font-size:11px;">Inspect</a>';
+                html += '<a href="' + liteInspect + '" target="_blank" class="btn btn-sm btn-outline" style="font-size:11px;opacity:0.7;">Lite Inspector</a>';
+                html += '</div>';
             }
             html += '</div>';
         });
