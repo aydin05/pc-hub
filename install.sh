@@ -433,17 +433,8 @@ xset s off
 xset -dpms
 xset s noblank
 
-# Hide cursor at boot (can be toggled at runtime via XFixes)
-python3 -c '
-import ctypes
-x = ctypes.cdll.LoadLibrary("libX11.so.6")
-f = ctypes.cdll.LoadLibrary("libXfixes.so.3")
-d = x.XOpenDisplay(None)
-if d:
-    f.XFixesHideCursor(d, x.XDefaultRootWindow(d))
-    x.XSync(d, False)
-    x.XCloseDisplay(d)
-' 2>/dev/null
+# Hide cursor at boot (persistent process keeps XFixes connection alive)
+python3 /opt/kiosk-manager/hide_cursor.py &
 
 # Start openbox window manager
 openbox-session &

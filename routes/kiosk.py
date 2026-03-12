@@ -264,45 +264,26 @@ def kill():
     return jsonify({'success': True})
 
 
+_HIDE_CURSOR_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'hide_cursor.py')
+
+
 def _apply_cursor_setting(show_cursor):
-    """Show or hide the cursor via X11 XFixes extension."""
-    import ctypes
+    """Show or hide the cursor by managing the hide_cursor.py background process.
+    XFixes hide is tied to connection lifetime, so a persistent process is needed."""
     env = get_sys().get_env_with_display()
-    display = env.get('DISPLAY', ':0')
     try:
-        xlib = ctypes.cdll.LoadLibrary('libX11.so.6')
-        xfixes = ctypes.cdll.LoadLibrary('libXfixes.so.3')
-
-        xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
-        xlib.XOpenDisplay.restype = ctypes.c_void_p
-        xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-        xlib.XDefaultRootWindow.restype = ctypes.c_ulong
-        xlib.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
-        xfixes.XFixesHideCursor.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
-        xfixes.XFixesShowCursor.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
-
-        # Install no-op error handler so X errors don't kill the process
-        XERROR_FUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_char))
-        _noop_handler = XERROR_FUNC(lambda d, e: 0)
-        xlib.XSetErrorHandler.argtypes = [XERROR_FUNC]
-        xlib.XSetErrorHandler.restype = XERROR_FUNC
-        xlib.XSetErrorHandler(_noop_handler)
-
-        d = xlib.XOpenDisplay(display.encode())
-        if not d:
-            logger.warning('Could not open X display %s', display)
-            return
-        root = xlib.XDefaultRootWindow(d)
+        # Kill any existing hide_cursor.py process
+        subprocess.run(['pkill', '-f', 'hide_cursor.py'], timeout=5,
+                       capture_output=True)
         if show_cursor:
-            # Hide first to ensure balanced state, then show
-            xfixes.XFixesHideCursor(d, root)
-            xfixes.XFixesShowCursor(d, root)
+            logger.info('Cursor shown (hide_cursor.py killed)')
         else:
-            xfixes.XFixesHideCursor(d, root)
-        xlib.XSync(d, False)
-        xlib.XCloseDisplay(d)
-        logger.info('Cursor %s (XFixes)', 'shown' if show_cursor else 'hidden')
+            time.sleep(0.3)
+            subprocess.Popen(
+                ['python3', _HIDE_CURSOR_SCRIPT],
+                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            logger.info('Cursor hidden (hide_cursor.py started)')
     except Exception as e:
         logger.warning('Could not apply cursor setting: %s', e)
 
