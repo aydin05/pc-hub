@@ -185,26 +185,41 @@ def _get_connection_name(nmcli, iface):
 
     Strategy:
       1. Ask nmcli for the active connection on the device.
-      2. Fall back to any connection associated with the device.
-      3. Last resort: return the interface name unchanged (works on systems
-         where the profile is named after the interface).
+      2. Fall back to any connection associated with the device (including inactive).
+      3. Create a new connection profile for the device.
     """
     # Step 1: active connection
     output, rc = _run_cmd([nmcli, '-g', 'GENERAL.CONNECTION', 'device', 'show', iface])
     if rc == 0 and output.strip() and output.strip() != '--':
+        logger.info('Found active connection "%s" for device %s', output.strip(), iface)
         return output.strip()
 
-    # Step 2: any connection with a matching device field
+    # Step 2: any connection (active or inactive) with a matching device/interface field
     output, rc = _run_cmd([nmcli, '-t', '-f', 'NAME,DEVICE', 'con', 'show'])
     if rc == 0:
         for line in output.split('\n'):
-            # nmcli -t escapes colons inside field values as backslash-colon; split on the last bare ':'
             parts = line.rsplit(':', 1)
             if len(parts) == 2 and parts[1].strip() == iface:
-                return parts[0].replace('\\:', ':')
+                name = parts[0].replace('\\:', ':')
+                logger.info('Found connection "%s" for device %s', name, iface)
+                return name
 
-    # Step 3: fall back to interface name
-    return iface
+    # Step 2b: also check the connection.interface-name field for inactive profiles
+    output, rc = _run_cmd([nmcli, '-t', '-f', 'NAME,connection.interface-name', 'con', 'show'])
+    if rc == 0:
+        for line in output.split('\n'):
+            parts = line.rsplit(':', 1)
+            if len(parts) == 2 and parts[1].strip() == iface:
+                name = parts[0].replace('\\:', ':')
+                logger.info('Found connection "%s" for interface %s (via connection.interface-name)', name, iface)
+                return name
+
+    # Step 3: create a new connection profile for this device
+    logger.info('No connection profile found for %s, creating one', iface)
+    conn_name = iface
+    _run_cmd(['sudo', nmcli, 'con', 'add', 'type', 'ethernet',
+              'con-name', conn_name, 'ifname', iface])
+    return conn_name
 
 
 def _configure_nmcli(nmcli, iface, method, data):
