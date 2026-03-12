@@ -265,14 +265,24 @@ def kill():
 
 
 def _apply_cursor_setting(show_cursor):
-    """Show or hide the cursor. X is started with -nocursor by default;
-    XFixes can override that at runtime to show/hide the cursor."""
+    """Show or hide the cursor via X11 XFixes extension."""
     import ctypes
+    import ctypes.util
     env = get_sys().get_env_with_display()
     display = env.get('DISPLAY', ':0')
     try:
         xlib = ctypes.cdll.LoadLibrary('libX11.so.6')
         xfixes = ctypes.cdll.LoadLibrary('libXfixes.so.3')
+
+        xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        xlib.XOpenDisplay.restype = ctypes.c_void_p
+        xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        xlib.XDefaultRootWindow.restype = ctypes.c_ulong
+        xlib.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        xfixes.XFixesHideCursor.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        xfixes.XFixesShowCursor.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+
         d = xlib.XOpenDisplay(display.encode())
         if not d:
             logger.warning('Could not open X display %s', display)
