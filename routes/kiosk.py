@@ -267,7 +267,6 @@ def kill():
 def _apply_cursor_setting(show_cursor):
     """Show or hide the cursor via X11 XFixes extension."""
     import ctypes
-    import ctypes.util
     env = get_sys().get_env_with_display()
     display = env.get('DISPLAY', ':0')
     try:
@@ -283,12 +282,21 @@ def _apply_cursor_setting(show_cursor):
         xfixes.XFixesHideCursor.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
         xfixes.XFixesShowCursor.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
 
+        # Install no-op error handler so X errors don't kill the process
+        XERROR_FUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_char))
+        _noop_handler = XERROR_FUNC(lambda d, e: 0)
+        xlib.XSetErrorHandler.argtypes = [XERROR_FUNC]
+        xlib.XSetErrorHandler.restype = XERROR_FUNC
+        xlib.XSetErrorHandler(_noop_handler)
+
         d = xlib.XOpenDisplay(display.encode())
         if not d:
             logger.warning('Could not open X display %s', display)
             return
         root = xlib.XDefaultRootWindow(d)
         if show_cursor:
+            # Hide first to ensure balanced state, then show
+            xfixes.XFixesHideCursor(d, root)
             xfixes.XFixesShowCursor(d, root)
         else:
             xfixes.XFixesHideCursor(d, root)
