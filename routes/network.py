@@ -1,3 +1,4 @@
+import os
 import subprocess
 import re
 import logging
@@ -154,6 +155,20 @@ def interfaces():
     return jsonify({'interfaces': _get_interfaces()})
 
 
+def _is_nm_managed(nmcli, iface):
+    """Check if NetworkManager actually manages this device."""
+    output, rc = _run_cmd([nmcli, '-t', '-f', 'DEVICE,STATE', 'device', 'status'])
+    if rc != 0:
+        return False
+    for line in output.split('\n'):
+        parts = line.split(':')
+        if len(parts) >= 2 and parts[0] == iface:
+            state = parts[1].strip()
+            logger.info('NM device %s state: %s', iface, state)
+            return state != 'unmanaged'
+    return False
+
+
 @network_bp.route('/api/configure', methods=['POST'])
 @login_required
 def configure():
@@ -165,36 +180,31 @@ def configure():
     if not SAFE_IFACE_RE.match(iface):
         return jsonify({'error': 'Invalid interface name'}), 400
 
+    # Check if NM manages this specific interface; fall back to ifupdown if not
     if sys.net_backend == 'networkmanager':
         nmcli = sys.bin('nmcli')
-        if not nmcli:
-            return jsonify({'error': 'nmcli not available'}), 500
-        return _configure_nmcli(nmcli, iface, method, data)
-    elif sys.net_backend == 'macos':
+        if nmcli and _is_nm_managed(nmcli, iface):
+            return _configure_nmcli(nmcli, iface, method, data)
+        logger.info('Interface %s is not NM-managed, trying ifupdown', iface)
+
+    if sys.is_linux and os.path.exists('/etc/network/interfaces'):
+        return _configure_ifupdown(iface, method, data)
+
+    if sys.net_backend == 'macos':
         return jsonify({'error': 'Network configuration via dashboard not supported on macOS. Use System Preferences.'}), 400
-    else:
-        return jsonify({'error': f'Network backend "{sys.net_backend}" not supported for configuration'}), 400
+
+    return jsonify({'error': f'Network backend "{sys.net_backend}" not supported for configuration'}), 400
 
 
 def _get_connection_name(nmcli, iface):
-    """Return the NetworkManager connection profile name for a network device.
-
-    NetworkManager separates device names (e.g. 'enp3s0') from connection
-    profile names (e.g. 'Wired connection 1').  'nmcli con mod/down/up'
-    requires the profile name, not the device name.
-
-    Strategy:
-      1. Ask nmcli for the active connection on the device.
-      2. Fall back to any connection associated with the device (including inactive).
-      3. Create a new connection profile for the device.
-    """
+    """Return the NetworkManager connection profile name for a network device."""
     # Step 1: active connection
     output, rc = _run_cmd([nmcli, '-g', 'GENERAL.CONNECTION', 'device', 'show', iface])
     if rc == 0 and output.strip() and output.strip() != '--':
         logger.info('Found active connection "%s" for device %s', output.strip(), iface)
         return output.strip()
 
-    # Step 2: any connection (active or inactive) with a matching device/interface field
+    # Step 2: any connection with a matching device field
     output, rc = _run_cmd([nmcli, '-t', '-f', 'NAME,DEVICE', 'con', 'show'])
     if rc == 0:
         for line in output.split('\n'):
@@ -204,22 +214,9 @@ def _get_connection_name(nmcli, iface):
                 logger.info('Found connection "%s" for device %s', name, iface)
                 return name
 
-    # Step 2b: also check the connection.interface-name field for inactive profiles
-    output, rc = _run_cmd([nmcli, '-t', '-f', 'NAME,connection.interface-name', 'con', 'show'])
-    if rc == 0:
-        for line in output.split('\n'):
-            parts = line.rsplit(':', 1)
-            if len(parts) == 2 and parts[1].strip() == iface:
-                name = parts[0].replace('\\:', ':')
-                logger.info('Found connection "%s" for interface %s (via connection.interface-name)', name, iface)
-                return name
-
-    # Step 3: create a new connection profile for this device
-    logger.info('No connection profile found for %s, creating one', iface)
-    conn_name = iface
-    _run_cmd(['sudo', nmcli, 'con', 'add', 'type', 'ethernet',
-              'con-name', conn_name, 'ifname', iface])
-    return conn_name
+    # Step 3: fall back to interface name
+    logger.warning('No NM connection profile found for %s', iface)
+    return iface
 
 
 def _configure_nmcli(nmcli, iface, method, data):
@@ -279,6 +276,83 @@ def _configure_nmcli(nmcli, iface, method, data):
     out, rc = _run_cmd(['sudo', nmcli, 'con', 'up', conn_name])
     if rc != 0:
         return jsonify({'error': f'Settings saved but failed to bring connection up: {out[:200]}'}), 500
+
+    return jsonify({'success': True})
+
+
+def _configure_ifupdown(iface, method, data):
+    """Configure network interface via /etc/network/interfaces."""
+    import shutil
+    interfaces_file = '/etc/network/interfaces'
+
+    if method == 'static':
+        ip_addr = data.get('ip', '')
+        gateway = data.get('gateway', '')
+        dns = data.get('dns', '')
+        subnet_mask = data.get('subnet', '255.255.255.0')
+
+        if not SAFE_IP_RE.match(ip_addr):
+            return jsonify({'error': 'Invalid IP address'}), 400
+        if gateway and not SAFE_IP_RE.match(gateway):
+            return jsonify({'error': 'Invalid gateway'}), 400
+
+        cidr = _subnet_mask_to_cidr(subnet_mask)
+        if cidr is None:
+            return jsonify({'error': 'Invalid subnet mask'}), 400
+
+        block = f'auto {iface}\niface {iface} inet static\n'
+        block += f'    address {ip_addr}/{cidr}\n'
+        if gateway:
+            block += f'    gateway {gateway}\n'
+        if dns:
+            servers = ' '.join(d.strip() for d in dns.split(',') if SAFE_IP_RE.match(d.strip()))
+            if servers:
+                block += f'    dns-nameservers {servers}\n'
+    elif method == 'dhcp':
+        block = f'auto {iface}\niface {iface} inet dhcp\n'
+    else:
+        return jsonify({'error': 'Invalid method'}), 400
+
+    try:
+        # Read existing file, replace or append the iface block
+        content = ''
+        if os.path.exists(interfaces_file):
+            with open(interfaces_file) as f:
+                content = f.read()
+
+        # Remove existing block for this interface
+        lines = content.split('\n')
+        new_lines = []
+        skip = False
+        for line in lines:
+            if re.match(rf'^(auto|iface|allow-hotplug)\s+{re.escape(iface)}\b', line):
+                skip = True
+                continue
+            if skip and (line.startswith('    ') or line.startswith('\t') or line.strip() == ''):
+                continue
+            skip = False
+            new_lines.append(line)
+
+        # Remove trailing blank lines then append new block
+        while new_lines and new_lines[-1].strip() == '':
+            new_lines.pop()
+        new_content = '\n'.join(new_lines) + '\n\n' + block
+
+        # Backup and write
+        shutil.copy2(interfaces_file, interfaces_file + '.bak')
+        with open(interfaces_file, 'w') as f:
+            f.write(new_content)
+
+        logger.info('Wrote ifupdown config for %s', iface)
+    except Exception as e:
+        logger.error('Failed to write %s: %s', interfaces_file, e)
+        return jsonify({'error': f'Failed to write config: {e}'}), 500
+
+    # Restart the interface
+    _run_cmd(['sudo', 'ifdown', iface])
+    out, rc = _run_cmd(['sudo', 'ifup', iface])
+    if rc != 0:
+        return jsonify({'error': f'Config saved but failed to bring interface up: {out[:200]}'}), 500
 
     return jsonify({'success': True})
 
