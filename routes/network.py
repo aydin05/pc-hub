@@ -53,6 +53,120 @@ def _run_cmd(cmd, timeout=10):
         return str(e), 1
 
 
+def _cidr_to_subnet_mask(cidr):
+    """Convert CIDR prefix (e.g. 24) to subnet mask (e.g. 255.255.255.0)."""
+    try:
+        cidr = int(cidr)
+        if cidr < 0 or cidr > 32:
+            return ''
+        bits = ('1' * cidr + '0' * (32 - cidr))
+        return '.'.join(str(int(bits[i:i+8], 2)) for i in range(0, 32, 8))
+    except (ValueError, TypeError):
+        return ''
+
+
+def _parse_ifupdown_config(iface):
+    """Parse /etc/network/interfaces for a specific interface config."""
+    config = {'method': 'dhcp', 'ip': '', 'subnet': '', 'gateway': '', 'dns': ''}
+    interfaces_file = '/etc/network/interfaces'
+    if not os.path.exists(interfaces_file):
+        return config
+    try:
+        with open(interfaces_file) as f:
+            content = f.read()
+    except Exception:
+        return config
+
+    in_block = False
+    for line in content.split('\n'):
+        stripped = line.strip()
+        if re.match(rf'^iface\s+{re.escape(iface)}\s+inet\s+(\S+)', stripped):
+            m = re.match(rf'^iface\s+{re.escape(iface)}\s+inet\s+(\S+)', stripped)
+            config['method'] = m.group(1)
+            in_block = True
+            continue
+        if in_block:
+            if stripped and not stripped.startswith('#') and not (line.startswith(' ') or line.startswith('\t')):
+                break
+            if stripped.startswith('address'):
+                addr = stripped.split(None, 1)[1] if len(stripped.split(None, 1)) > 1 else ''
+                if '/' in addr:
+                    ip_part, cidr_part = addr.rsplit('/', 1)
+                    config['ip'] = ip_part
+                    config['subnet'] = _cidr_to_subnet_mask(cidr_part)
+                else:
+                    config['ip'] = addr
+            elif stripped.startswith('netmask'):
+                config['subnet'] = stripped.split(None, 1)[1] if len(stripped.split(None, 1)) > 1 else ''
+            elif stripped.startswith('gateway'):
+                config['gateway'] = stripped.split(None, 1)[1] if len(stripped.split(None, 1)) > 1 else ''
+            elif stripped.startswith('dns-nameservers'):
+                config['dns'] = stripped.split(None, 1)[1].replace(' ', ', ') if len(stripped.split(None, 1)) > 1 else ''
+    return config
+
+
+def _get_iface_config_linux(iface_name):
+    """Get current config for a Linux interface."""
+    sys = get_sys()
+    ip_bin = sys.bin('ip')
+    config = {'method': 'dhcp', 'ip': '', 'subnet': '', 'gateway': '', 'dns': ''}
+
+    # Try ifupdown first
+    ifup_config = _parse_ifupdown_config(iface_name)
+    if ifup_config['method'] == 'static' and ifup_config['ip']:
+        return ifup_config
+
+    # Try NM
+    nmcli = sys.bin('nmcli')
+    if nmcli:
+        output, rc = _run_cmd([nmcli, '-g', 'GENERAL.CONNECTION', 'device', 'show', iface_name])
+        if rc == 0 and output.strip() and output.strip() != '--':
+            conn = output.strip()
+            # Get method
+            out, _ = _run_cmd([nmcli, '-g', 'ipv4.method', 'con', 'show', conn])
+            if out.strip() == 'manual':
+                config['method'] = 'static'
+            # Get addresses
+            out, _ = _run_cmd([nmcli, '-g', 'ipv4.addresses', 'con', 'show', conn])
+            if out.strip():
+                addr = out.strip()
+                if '/' in addr:
+                    ip_part, cidr_part = addr.rsplit('/', 1)
+                    config['ip'] = ip_part
+                    config['subnet'] = _cidr_to_subnet_mask(cidr_part)
+                else:
+                    config['ip'] = addr
+            out, _ = _run_cmd([nmcli, '-g', 'ipv4.gateway', 'con', 'show', conn])
+            if out.strip():
+                config['gateway'] = out.strip()
+            out, _ = _run_cmd([nmcli, '-g', 'ipv4.dns', 'con', 'show', conn])
+            if out.strip():
+                config['dns'] = out.strip().replace(' ', ', ')
+            return config
+
+    # Fallback: get from ip command
+    if ip_bin:
+        ip_out, _ = _run_cmd([ip_bin, '-4', 'addr', 'show', iface_name])
+        ip_match = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)/(\d+)', ip_out)
+        if ip_match:
+            config['ip'] = ip_match.group(1)
+            config['subnet'] = _cidr_to_subnet_mask(ip_match.group(2))
+            config['method'] = 'static'
+        route_out, _ = _run_cmd([ip_bin, 'route', 'show', 'dev', iface_name])
+        gw_match = re.search(r'default via\s+([\d.]+)', route_out)
+        if gw_match:
+            config['gateway'] = gw_match.group(1)
+        # DNS from resolv.conf
+        if os.path.exists('/etc/resolv.conf'):
+            try:
+                with open('/etc/resolv.conf') as f:
+                    servers = [line.split()[1] for line in f if line.startswith('nameserver')]
+                    config['dns'] = ', '.join(servers)
+            except Exception:
+                pass
+    return config
+
+
 def _get_interfaces_linux():
     """Get network interfaces on Linux using ip command."""
     sys = get_sys()
@@ -155,6 +269,75 @@ def interfaces():
     return jsonify({'interfaces': _get_interfaces()})
 
 
+@network_bp.route('/api/iface-config/<name>')
+@login_required
+def iface_config(name):
+    """Return current configuration for a specific interface."""
+    if not SAFE_IFACE_RE.match(name):
+        return jsonify({'error': 'Invalid interface name'}), 400
+    sys = get_sys()
+    if sys.is_linux:
+        config = _get_iface_config_linux(name)
+    else:
+        config = {'method': 'dhcp', 'ip': '', 'subnet': '', 'gateway': '', 'dns': ''}
+    # Also return proxy settings
+    config['proxy'] = _get_proxy_settings()
+    return jsonify(config)
+
+
+def _get_proxy_settings():
+    """Read proxy settings from /etc/environment."""
+    proxy = {'http_proxy': '', 'https_proxy': '', 'no_proxy': ''}
+    env_file = '/etc/environment'
+    if not os.path.exists(env_file):
+        return proxy
+    try:
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                for key in ('http_proxy', 'https_proxy', 'no_proxy'):
+                    if line.lower().startswith(key + '='):
+                        val = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        proxy[key] = val
+    except Exception:
+        pass
+    return proxy
+
+
+def _set_proxy_settings(http_proxy, https_proxy, no_proxy):
+    """Write proxy settings to /etc/environment."""
+    env_file = '/etc/environment'
+    proxy_keys = {'http_proxy', 'https_proxy', 'no_proxy',
+                  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY'}
+    lines = []
+    if os.path.exists(env_file):
+        try:
+            with open(env_file) as f:
+                for line in f:
+                    key = line.strip().split('=', 1)[0].strip()
+                    if key not in proxy_keys:
+                        lines.append(line.rstrip('\n'))
+        except Exception:
+            pass
+
+    if http_proxy:
+        lines.append(f'http_proxy="{http_proxy}"')
+        lines.append(f'HTTP_PROXY="{http_proxy}"')
+    if https_proxy:
+        lines.append(f'https_proxy="{https_proxy}"')
+        lines.append(f'HTTPS_PROXY="{https_proxy}"')
+    if no_proxy:
+        lines.append(f'no_proxy="{no_proxy}"')
+        lines.append(f'NO_PROXY="{no_proxy}"')
+
+    try:
+        with open(env_file, 'w') as f:
+            f.write('\n'.join(lines) + '\n')
+        logger.info('Proxy settings updated in %s', env_file)
+    except Exception as e:
+        logger.error('Failed to write proxy settings: %s', e)
+
+
 def _is_nm_managed(nmcli, iface):
     """Check if NetworkManager actually manages this device."""
     output, rc = _run_cmd([nmcli, '-t', '-f', 'DEVICE,STATE', 'device', 'status'])
@@ -179,6 +362,15 @@ def configure():
 
     if not SAFE_IFACE_RE.match(iface):
         return jsonify({'error': 'Invalid interface name'}), 400
+
+    # Save proxy settings if provided
+    proxy = data.get('proxy', {})
+    if proxy:
+        _set_proxy_settings(
+            proxy.get('http_proxy', ''),
+            proxy.get('https_proxy', ''),
+            proxy.get('no_proxy', ''),
+        )
 
     # Check if NM manages this specific interface; fall back to ifupdown if not
     if sys.net_backend == 'networkmanager':
@@ -254,10 +446,20 @@ def _configure_nmcli(nmcli, iface, method, data):
         if '/' not in ip_addr:
             ip_addr = f'{ip_addr}/{cidr}'
 
+        # Build address list (primary + optional alternate)
+        addresses = ip_addr
+        alt_ip = data.get('alt_ip', '')
+        alt_subnet = data.get('alt_subnet', '')
+        if alt_ip and SAFE_IP_RE.match(alt_ip):
+            alt_cidr = _subnet_mask_to_cidr(alt_subnet) if alt_subnet else cidr
+            if alt_cidr is None:
+                alt_cidr = cidr
+            addresses = f'{ip_addr},{alt_ip}/{alt_cidr}'
+
         cmd = [
             'sudo', nmcli, 'con', 'mod', conn_name,
             'ipv4.method', 'manual',
-            'ipv4.addresses', ip_addr,
+            'ipv4.addresses', addresses,
         ]
         if gateway:
             cmd.extend(['ipv4.gateway', gateway])
@@ -308,6 +510,16 @@ def _configure_ifupdown(iface, method, data):
             servers = ' '.join(d.strip() for d in dns.split(',') if SAFE_IP_RE.match(d.strip()))
             if servers:
                 block += f'    dns-nameservers {servers}\n'
+
+        # Alternate IP as a secondary address
+        alt_ip = data.get('alt_ip', '')
+        alt_subnet = data.get('alt_subnet', '')
+        if alt_ip and SAFE_IP_RE.match(alt_ip):
+            alt_cidr = _subnet_mask_to_cidr(alt_subnet) if alt_subnet else cidr
+            if alt_cidr is None:
+                alt_cidr = cidr
+            block += f'    up ip addr add {alt_ip}/{alt_cidr} dev {iface} label {iface}:1\n'
+            block += f'    down ip addr del {alt_ip}/{alt_cidr} dev {iface} label {iface}:1\n'
     elif method == 'dhcp':
         block = f'auto {iface}\niface {iface} inet dhcp\n'
     else:
