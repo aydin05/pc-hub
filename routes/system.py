@@ -6,7 +6,6 @@ import time
 import threading
 import tempfile
 import logging
-from datetime import datetime
 from flask import Blueprint, render_template, request, jsonify, current_app
 from auth_utils import login_required
 from sysdetect import get_sys
@@ -103,45 +102,23 @@ def _write_schedule(data):
 
 
 def _check_reboot_time():
-    """Background thread: check every 30s if reboot time is reached."""
-    last_reboot_minute = None
+    """Background thread: every 30s read schedule.json, compare time, reboot if match."""
+    last_reboot = None
     while True:
         try:
             schedule = _read_schedule()
             if schedule.get('enabled'):
-                now = datetime.now()
-                current_hour = now.hour
-                current_minute = now.minute
-                current_dow = now.isoweekday() % 7  # 0=Sun, 1=Mon, ..., 6=Sat
+                now = time.strftime('%H:%M')
+                reboot_time = f"{schedule['hour']:02d}:{schedule['minute']:02d}"
 
-                sched_hour = schedule.get('hour', 3)
-                sched_minute = schedule.get('minute', 0)
-                days = schedule.get('days', '*')
-
-                # Check if today matches the day-of-week schedule
-                day_match = False
-                if days == '*':
-                    day_match = True
-                else:
-                    allowed = set()
-                    for part in days.split(','):
-                        part = part.strip()
-                        if '-' in part:
-                            start, end = part.split('-', 1)
-                            allowed.update(range(int(start), int(end) + 1))
-                        else:
-                            allowed.add(int(part))
-                    day_match = current_dow in allowed
-
-                if day_match and current_hour == sched_hour and current_minute == sched_minute:
-                    # Prevent rebooting multiple times in the same minute
-                    reboot_key = f'{now.year}-{now.month}-{now.day}-{current_hour}-{current_minute}'
-                    if last_reboot_minute != reboot_key:
-                        last_reboot_minute = reboot_key
-                        logger.info('Auto-reboot time reached (%02d:%02d). Rebooting...', sched_hour, sched_minute)
-                        subprocess.run(['sudo', 'reboot'])
+                if now == reboot_time and last_reboot != reboot_time:
+                    last_reboot = reboot_time
+                    logger.info('Scheduled reboot time %s reached. Rebooting...', reboot_time)
+                    subprocess.Popen(['sudo', 'reboot'])
+                elif now != reboot_time:
+                    last_reboot = None
         except Exception as e:
-            logger.error('Error in reboot check thread: %s', e)
+            logger.error('Reboot scheduler error: %s', e)
         time.sleep(30)
 
 
