@@ -82,6 +82,7 @@ def _launch_chromium(url=None):
 
     if devtools:
         cmd.append('--remote-debugging-port=9222')
+        cmd.append('--remote-allow-origins=*')
 
     # Use sysdetect env which includes DISPLAY, XAUTHORITY, etc.
     env = get_sys().get_env_with_display()
