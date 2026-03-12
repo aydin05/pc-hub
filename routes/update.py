@@ -94,6 +94,19 @@ def pull():
 
             if proc.returncode == 0:
                 yield f"data: [SUCCESS] Update complete. Version: {_get_version()}\n\n"
+                yield "data: [INFO] Installing dependencies...\n\n"
+                venv_pip = os.path.join(BASE_DIR, 'venv', 'bin', 'pip')
+                pip_bin = venv_pip if os.path.isfile(venv_pip) else 'pip'
+                req_file = os.path.join(BASE_DIR, 'requirements.txt')
+                pip_proc = subprocess.run(
+                    [pip_bin, 'install', '-r', req_file],
+                    capture_output=True, text=True, cwd=BASE_DIR, timeout=120
+                )
+                if pip_proc.returncode == 0:
+                    yield "data: [SUCCESS] Dependencies installed.\n\n"
+                else:
+                    for pip_line in pip_proc.stderr.strip().splitlines():
+                        yield f"data: [ERROR] {pip_line}\n\n"
                 yield "data: [RESTARTING] Restarting service...\n\n"
                 try:
                     sys = get_sys()

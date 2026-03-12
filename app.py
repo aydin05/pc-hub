@@ -4,6 +4,7 @@
 import os
 import logging
 from flask import Flask, redirect, url_for, session, request, jsonify
+from flask_sock import Sock
 
 from config import SECRET_KEY, BIND_HOST, BIND_PORT, SCREENSHOTS_DIR, LAN_ONLY
 from database import init_db, get_setting
@@ -36,7 +37,7 @@ def create_app():
 
     from routes.auth import auth_bp
     from routes.dashboard import dashboard_bp
-    from routes.kiosk import kiosk_bp
+    from routes.kiosk import kiosk_bp, init_kiosk_ws
     from routes.network import network_bp
     from routes.diagnostics import diagnostics_bp
     from routes.display import display_bp
@@ -48,6 +49,8 @@ def create_app():
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
+    sock = Sock(app)
+    init_kiosk_ws(sock)
     app.register_blueprint(kiosk_bp, url_prefix='/kiosk')
     app.register_blueprint(network_bp, url_prefix='/network')
     app.register_blueprint(diagnostics_bp, url_prefix='/diagnostics')

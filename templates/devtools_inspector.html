@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevTools Inspector - Kiosk Manager</title>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-secondary: #1a1d27;
+            --bg-tertiary: #242736;
+            --bg-card: #1e2130;
+            --bg-hover: #2a2d40;
+            --bg-input: #161822;
+            --border: #2e3148;
+            --border-focus: #5b6abf;
+            --text-primary: #e4e6f0;
+            --text-secondary: #8b8fa8;
+            --text-muted: #5a5e76;
+            --accent: #5b6abf;
+            --accent-hover: #6e7dd4;
+            --success: #34d399;
+            --danger: #f87171;
+            --warning: #fbbf24;
+            --info: #60a5fa;
+            --radius: 6px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .toolbar-title {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-right: 8px;
+        }
+        .toolbar-url {
+            flex: 1;
+            font-size: 12px;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .toolbar-status {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+            flex-shrink: 0;
+        }
+        .toolbar-status.connected { background: var(--success); }
+        .tb-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 4px 10px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .tb-btn:hover { background: var(--bg-hover); }
+        .tb-btn svg { width: 14px; height: 14px; vertical-align: -2px; }
+
+        /* Tabs */
+        .tab-bar {
+            display: flex;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .tab {
+            padding: 6px 16px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            user-select: none;
+        }
+        .tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        /* Panels */
+        .panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+        .panel.active { display: flex; }
+
+        /* Console */
+        .console-output {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 12px;
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .console-line {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(46, 49, 72, 0.3);
+            word-break: break-all;
+        }
+        .console-line.log { color: var(--text-primary); }
+        .console-line.warn { color: var(--warning); background: rgba(251,191,36,0.05); }
+        .console-line.error { color: var(--danger); background: rgba(248,113,113,0.05); }
+        .console-line.info { color: var(--info); }
+        .console-line.result { color: #a78bfa; }
+        .console-line.input { color: var(--text-muted); }
+        .console-line .prefix {
+            color: var(--text-muted);
+            margin-right: 6px;
+            user-select: none;
+        }
+        .console-input-wrap {
+            display: flex;
+            align-items: center;
+            border-top: 1px solid var(--border);
+            background: var(--bg-input);
+            flex-shrink: 0;
+        }
+        .console-prompt {
+            padding: 0 8px;
+            color: var(--accent);
+            font-family: monospace;
+            user-select: none;
+        }
+        .console-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+            font-size: 12px;
+            padding: 8px 8px 8px 0;
+            outline: none;
+        }
+
+        /* Elements panel */
+        .elements-tree {
+            flex: 1;
+            overflow: auto;
+            padding: 8px 12px;
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.8;
+            white-space: pre;
+        }
+        .el-tag { color: #7cacf8; }
+        .el-attr-name { color: #f8a07c; }
+        .el-attr-val { color: #a5d6a7; }
+        .el-text { color: var(--text-secondary); }
+        .el-toggle {
+            cursor: pointer;
+            user-select: none;
+            display: inline-block;
+            width: 12px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        /* Network panel */
+        .network-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .network-table th {
+            position: sticky;
+            top: 0;
+            background: var(--bg-secondary);
+            text-align: left;
+            padding: 6px 10px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+        .network-table td {
+            padding: 4px 10px;
+            border-bottom: 1px solid rgba(46,49,72,0.3);
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .network-table tr:hover td { background: var(--bg-hover); }
+        .network-status { font-weight: 600; }
+        .network-status.s2xx { color: var(--success); }
+        .network-status.s3xx { color: var(--info); }
+        .network-status.s4xx, .network-status.s5xx { color: var(--danger); }
+
+        /* Screenshot panel */
+        .screenshot-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            gap: 12px;
+        }
+        .screenshot-wrap img {
+            max-width: 100%;
+            max-height: calc(100vh - 160px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+        .screenshot-wrap .placeholder {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Connection overlay */
+        .conn-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15,17,23,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 100;
+        }
+        .conn-overlay.hidden { display: none; }
+        .conn-overlay .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .conn-overlay .conn-error { color: var(--danger); text-align: center; max-width: 400px; }
+        .conn-overlay a { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="toolbar-status" id="conn-status"></div>
+        <div class="toolbar-title">Inspector</div>
+        <div class="toolbar-url" id="page-url">Connecting...</div>
+        <button class="tb-btn" onclick="doReload()" title="Reload page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+        <button class="tb-btn" onclick="doScreenshot()" title="Capture screenshot">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
+        <button class="tb-btn" onclick="clearConsole()">Clear</button>
+        <a href="/kiosk/" class="tb-btn" style="text-decoration:none;">Back</a>
+    </div>
+
+    <div class="tab-bar">
+        <div class="tab active" data-panel="console">Console</div>
+        <div class="tab" data-panel="elements">Elements</div>
+        <div class="tab" data-panel="network">Network</div>
+        <div class="tab" data-panel="screenshot">Screenshot</div>
+    </div>
+
+    <div style="flex:1;position:relative;display:flex;flex-direction:column;overflow:hidden;">
+        <div class="conn-overlay" id="conn-overlay">
+            <div class="spinner"></div>
+            <div style="color:var(--text-secondary);">Connecting to DevTools...</div>
+        </div>
+
+        <!-- Console Panel -->
+        <div class="panel active" id="panel-console">
+            <div class="console-output" id="console-output"></div>
+            <div class="console-input-wrap">
+                <span class="console-prompt">&gt;</span>
+                <input class="console-input" id="console-input" placeholder="Evaluate JavaScript..." autocomplete="off" spellcheck="false">
+            </div>
+        </div>
+
+        <!-- Elements Panel -->
+        <div class="panel" id="panel-elements">
+            <div style="padding:6px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border);">
+                <button class="tb-btn" onclick="fetchDOM()">Refresh DOM</button>
+            </div>
+            <div class="elements-tree" id="elements-tree">Click "Refresh DOM" to load the document tree.</div>
+        </div>
+
+        <!-- Network Panel -->
+        <div class="panel" id="panel-network">
+            <div style="padding:6px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;">
+                <button class="tb-btn" onclick="networkRequests=[];renderNetwork()">Clear</button>
+                <span style="color:var(--text-muted);font-size:12px;" id="network-count">0 requests</span>
+            </div>
+            <div style="flex:1;overflow:auto;">
+                <table class="network-table">
+                    <thead><tr><th>Status</th><th>Method</th><th>URL</th><th>Type</th><th>Size</th></tr></thead>
+                    <tbody id="network-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Screenshot Panel -->
+        <div class="panel" id="panel-screenshot">
+            <div class="screenshot-wrap">
+                <div class="placeholder" id="screenshot-placeholder">Click the screenshot button to capture.</div>
+                <img id="screenshot-img" style="display:none;">
+            </div>
+        </div>
+    </div>
+
+<script>
+const PAGE_ID = '{{ page_id }}';
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/kiosk/devtools-ws/' + PAGE_ID;
+
+let ws = null;
+let msgId = 1;
+const pending = {};
+let consoleHistory = [];
+let historyIdx = -1;
+let networkRequests = [];
+
+/* ── WebSocket connection ── */
+function connect() {
+    const overlay = document.getElementById('conn-overlay');
+    const status = document.getElementById('conn-status');
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = '<div class="spinner"></div><div style="color:var(--text-secondary);">Connecting to DevTools...</div>';
+
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = function() {
+        overlay.classList.add('hidden');
+        status.classList.add('connected');
+        document.getElementById('page-url').textContent = 'Connected';
+        enableDomains();
+    };
+
+    ws.onmessage = function(e) {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+
+        if (msg.error && !msg.id) {
+            overlay.classList.remove('hidden');
+            overlay.innerHTML = '<div class="conn-error">Connection failed:<br>' + escapeHtml(msg.error) + '<br><br><a href="/kiosk/">Back to Kiosk</a></div>';
+            return;
+        }
+
+        if (msg.id && pending[msg.id]) {
+            pending[msg.id](msg);
+            delete pending[msg.id];
+        }
+
+        if (msg.method) handleEvent(msg);
+    };
+
+    ws.onclose = function() {
+        status.classList.remove('connected');
+        document.getElementById('page-url').textContent = 'Disconnected';
+        overlay.classList.remove('hidden');
+        overlay.innerHTML = '<div class="conn-error">Connection lost.<br><br><button class="tb-btn" onclick="connect()">Reconnect</button>&nbsp;<a href="/kiosk/" class="tb-btn" style="text-decoration:none;">Back</a></div>';
+    };
+
+    ws.onerror = function() {};
+}
+
+function send(method, params) {
+    return new Promise(function(resolve) {
+        const id = msgId++;
+        pending[id] = resolve;
+        ws.send(JSON.stringify({ id: id, method: method, params: params || {} }));
+    });
+}
+
+/* ── Enable CDP domains ── */
+function enableDomains() {
+    send('Runtime.enable');
+    send('Log.enable');
+    send('Network.enable');
+    send('Page.enable');
+    send('Runtime.evaluate', { expression: 'document.title + " | " + location.href' }).then(function(r) {
+        if (r.result && r.result.result) {
+            document.getElementById('page-url').textContent = r.result.result.value || 'Connected';
+        }
+    });
+}
+
+/* ── Handle CDP events ── */
+function handleEvent(msg) {
+    switch (msg.method) {
+        case 'Runtime.consoleAPICalled':
+            handleConsoleAPI(msg.params);
+            break;
+        case 'Runtime.exceptionThrown':
+            appendConsole('error', msg.params.exceptionDetails.text || 'Exception');
+            break;
+        case 'Log.entryAdded':
+            var entry = msg.params.entry;
+            appendConsole(entry.level || 'log', entry.text || '');
+            break;
+        case 'Network.requestWillBeSent':
+            networkRequests.push({
+                id: msg.params.requestId,
+                method: msg.params.request.method,
+                url: msg.params.request.url,
+                status: '...',
+                type: msg.params.type || '',
+                size: ''
+            });
+            renderNetwork();
+            break;
+        case 'Network.responseReceived':
+            var resp = msg.params.response;
+            for (var i = networkRequests.length - 1; i >= 0; i--) {
+                if (networkRequests[i].id === msg.params.requestId) {
+                    networkRequests[i].status = resp.status;
+                    networkRequests[i].type = msg.params.type || networkRequests[i].type;
+                    break;
+                }
+            }
+            renderNetwork();
+            break;
+        case 'Network.loadingFinished':
+            for (var j = networkRequests.length - 1; j >= 0; j--) {
+                if (networkRequests[j].id === msg.params.requestId) {
+                    var bytes = msg.params.encodedDataLength;
+                    networkRequests[j].size = bytes > 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B';
+                    break;
+                }
+            }
+            renderNetwork();
+            break;
+    }
+}
+
+/* ── Console ── */
+function handleConsoleAPI(params) {
+    var type = params.type || 'log';
+    var parts = (params.args || []).map(function(a) {
+        if (a.type === 'string') return a.value;
+        if (a.type === 'undefined') return 'undefined';
+        if (a.subtype === 'null') return 'null';
+        if (a.description) return a.description;
+        if (a.value !== undefined) return JSON.stringify(a.value);
+        return a.type;
+    });
+    appendConsole(type, parts.join(' '));
+}
+
+function appendConsole(type, text) {
+    var output = document.getElementById('console-output');
+    var line = document.createElement('div');
+    line.className = 'console-line ' + type;
+    var prefix = '';
+    if (type === 'error') prefix = '\u2716 ';
+    else if (type === 'warn' || type === 'warning') prefix = '\u26A0 ';
+    else if (type === 'info') prefix = '\u2139 ';
+    line.innerHTML = (prefix ? '<span class="prefix">' + prefix + '</span>' : '') + escapeHtml(text);
+    output.appendChild(line);
+    output.scrollTop = output.scrollHeight;
+}
+
+function clearConsole() {
+    document.getElementById('console-output').innerHTML = '';
+}
+
+function evaluateExpression(expr) {
+    appendConsole('input', '> ' + expr);
+    consoleHistory.unshift(expr);
+    historyIdx = -1;
+    send('Runtime.evaluate', {
+        expression: expr,
+        generatePreview: true,
+        returnByValue: false
+    }).then(function(r) {
+        if (r.result) {
+            if (r.result.exceptionDetails) {
+                appendConsole('error', r.result.exceptionDetails.text || 'Error');
+            } else if (r.result.result) {
+                var val = r.result.result;
+                var text;
+                if (val.type === 'undefined') text = 'undefined';
+                else if (val.subtype === 'null') text = 'null';
+                else if (val.description) text = val.description;
+                else if (val.value !== undefined) text = JSON.stringify(val.value);
+                else text = val.type;
+                appendConsole('result', text);
+            }
+        }
+    });
+}
+
+/* ── Elements ── */
+function fetchDOM() {
+    document.getElementById('elements-tree').textContent = 'Loading...';
+    send('DOM.getDocument', { depth: -1 }).then(function(r) {
+        if (r.result && r.result.root) {
+            document.getElementById('elements-tree').innerHTML = '';
+            renderNode(r.result.root, document.getElementById('elements-tree'), 0);
+        }
+    });
+}
+
+function renderNode(node, container, depth) {
+    var indent = '  '.repeat(depth);
+    if (node.nodeType === 3) {
+        var text = (node.nodeValue || '').trim();
+        if (text) {
+            var span = document.createElement('span');
+            span.className = 'el-text';
+            span.textContent = indent + '"' + text.substring(0, 200) + (text.length > 200 ? '...' : '') + '"\n';
+            container.appendChild(span);
+        }
+        return;
+    }
+    if (node.nodeType === 1 || node.nodeType === 9 || node.nodeType === 10 || node.nodeType === 11) {
+        var tag = (node.localName || node.nodeName || '').toLowerCase();
+        if (!tag && node.nodeType === 9) tag = '#document';
+        if (!tag && node.nodeType === 11) tag = '#document-fragment';
+
+        var line = document.createElement('div');
+        var hasChildren = node.children && node.children.length > 0;
+
+        var html = indent;
+        if (hasChildren) {
+            html += '<span class="el-toggle" data-expanded="true">\u25BE</span>';
+        } else {
+            html += ' ';
+        }
+        html += '<span class="el-tag">&lt;' + escapeHtml(tag) + '</span>';
+
+        if (node.attributes) {
+            for (var i = 0; i < node.attributes.length; i += 2) {
+                html += ' <span class="el-attr-name">' + escapeHtml(node.attributes[i]) + '</span>';
+                html += '=<span class="el-attr-val">"' + escapeHtml(node.attributes[i + 1]) + '"</span>';
+            }
+        }
+        html += '<span class="el-tag">&gt;</span>';
+        line.innerHTML = html;
+        container.appendChild(line);
+
+        var childContainer;
+        if (hasChildren) {
+            childContainer = document.createElement('div');
+            container.appendChild(childContainer);
+            var toggle = line.querySelector('.el-toggle');
+            if (toggle) {
+                toggle.addEventListener('click', (function(cc, tg) {
+                    return function() {
+                        var expanded = tg.dataset.expanded === 'true';
+                        cc.style.display = expanded ? 'none' : '';
+                        tg.textContent = expanded ? '\u25B8' : '\u25BE';
+                        tg.dataset.expanded = expanded ? 'false' : 'true';
+                    };
+                })(childContainer, toggle));
+            }
+            for (var c = 0; c < node.children.length; c++) {
+                renderNode(node.children[c], childContainer, depth + 1);
+            }
+        }
+
+        if (tag && tag !== '#document' && tag !== '#document-fragment') {
+            var closing = document.createElement('div');
+            closing.innerHTML = (hasChildren ? indent : '') + '<span class="el-tag">&lt;/' + escapeHtml(tag) + '&gt;</span>';
+            if (hasChildren) {
+                childContainer.appendChild(closing);
+            } else {
+                line.innerHTML += '<span class="el-tag">&lt;/' + escapeHtml(tag) + '&gt;</span>';
+            }
+        }
+    }
+}
+
+/* ── Network ── */
+function renderNetwork() {
+    var body = document.getElementById('network-body');
+    var html = '';
+    for (var i = networkRequests.length - 1; i >= 0; i--) {
+        var r = networkRequests[i];
+        var sc = '';
+        if (typeof r.status === 'number') {
+            if (r.status >= 200 && r.status < 300) sc = 's2xx';
+            else if (r.status >= 300 && r.status < 400) sc = 's3xx';
+            else if (r.status >= 400) sc = 's4xx';
+        }
+        html += '<tr><td class="network-status ' + sc + '">' + r.status + '</td>';
+        html += '<td>' + escapeHtml(r.method) + '</td>';
+        html += '<td title="' + escapeHtml(r.url) + '">' + escapeHtml(r.url) + '</td>';
+        html += '<td>' + escapeHtml(r.type) + '</td>';
+        html += '<td>' + (r.size || '') + '</td></tr>';
+    }
+    body.innerHTML = html;
+    document.getElementById('network-count').textContent = networkRequests.length + ' requests';
+}
+
+/* ── Actions ── */
+function doReload() {
+    send('Page.reload', { ignoreCache: true });
+}
+
+function doScreenshot() {
+    send('Page.captureScreenshot', { format: 'png', quality: 90 }).then(function(r) {
+        if (r.result && r.result.data) {
+            var img = document.getElementById('screenshot-img');
+            img.src = 'data:image/png;base64,' + r.result.data;
+            img.style.display = '';
+            document.getElementById('screenshot-placeholder').style.display = 'none';
+            /* Switch to screenshot tab */
+            switchTab('screenshot');
+        }
+    });
+}
+
+/* ── Tabs ── */
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(function(t) {
+        t.classList.toggle('active', t.dataset.panel === name);
+    });
+    document.querySelectorAll('.panel').forEach(function(p) {
+        p.classList.toggle('active', p.id === 'panel-' + name);
+    });
+}
+
+document.querySelectorAll('.tab').forEach(function(t) {
+    t.addEventListener('click', function() { switchTab(t.dataset.panel); });
+});
+
+/* ── Console input ── */
+document.getElementById('console-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && this.value.trim()) {
+        evaluateExpression(this.value.trim());
+        this.value = '';
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (historyIdx < consoleHistory.length - 1) {
+            historyIdx++;
+            this.value = consoleHistory[historyIdx];
+        }
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (historyIdx > 0) {
+            historyIdx--;
+            this.value = consoleHistory[historyIdx];
+        } else {
+            historyIdx = -1;
+            this.value = '';
+        }
+    }
+});
+
+/* ── Utility ── */
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+}
+
+/* ── Start ── */
+connect();
+</script>
+</body>
+</html>

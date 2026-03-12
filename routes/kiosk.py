@@ -8,6 +8,7 @@ import time
 import logging
 import urllib.request
 import urllib.error
+import websocket as ws_client
 from flask import Blueprint, render_template, request, jsonify
 from auth_utils import login_required
 from database import get_setting, set_setting
@@ -361,3 +362,69 @@ def update_settings():
         elif not enabled:
             _watchdog_running = False
     return jsonify({'success': True})
+
+
+@kiosk_bp.route('/inspector')
+@login_required
+def inspector_page():
+    """Serve the built-in DevTools inspector page."""
+    page_id = request.args.get('page', '')
+    return render_template('devtools_inspector.html', page_id=page_id)
+
+
+def init_kiosk_ws(sock):
+    """Register WebSocket routes for DevTools proxy."""
+
+    @sock.route('/kiosk/devtools-ws/<page_id>')
+    def devtools_ws_proxy(ws, page_id):
+        """Bidirectional WebSocket proxy: browser <-> Chrome DevTools."""
+        chrome_url = f'ws://127.0.0.1:9222/devtools/page/{page_id}'
+        chrome_ws = None
+        try:
+            chrome_ws = ws_client.WebSocket()
+            chrome_ws.connect(chrome_url, timeout=5)
+        except Exception as e:
+            logger.warning('Could not connect to Chrome DevTools WS: %s', e)
+            try:
+                ws.send(json.dumps({
+                    'error': f'Cannot connect to Chrome debug port: {e}'
+                }))
+            except Exception:
+                pass
+            return
+
+        stop = threading.Event()
+
+        def chrome_to_client():
+            """Forward messages from Chrome -> client browser."""
+            try:
+                while not stop.is_set():
+                    try:
+                        chrome_ws.settimeout(1)
+                        msg = chrome_ws.recv()
+                        if msg:
+                            ws.send(msg)
+                    except ws_client.WebSocketTimeoutException:
+                        continue
+                    except Exception:
+                        break
+            finally:
+                stop.set()
+
+        relay = threading.Thread(target=chrome_to_client, daemon=True)
+        relay.start()
+
+        try:
+            while not stop.is_set():
+                msg = ws.receive(timeout=1)
+                if msg is None:
+                    break
+                chrome_ws.send(msg)
+        except Exception:
+            pass
+        finally:
+            stop.set()
+            try:
+                chrome_ws.close()
+            except Exception:
+                pass
