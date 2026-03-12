@@ -12,6 +12,7 @@ import websocket as ws_client
 from flask import Blueprint, render_template, request, jsonify
 from auth_utils import login_required
 from database import get_setting, set_setting
+from config import BIND_PORT
 
 logger = logging.getLogger(__name__)
 from sysdetect import get_sys
@@ -67,7 +68,7 @@ def _launch_chromium(url=None):
     devtools = get_setting('kiosk_devtools', '0') == '1'
 
     if not _is_url_reachable(url):
-        url = 'http://127.0.0.1:5000/kiosk/error-page'
+        url = f'http://127.0.0.1:{BIND_PORT}/kiosk/error-page'
 
     chromium = _find_chromium()
     cmd = [
@@ -109,7 +110,7 @@ def _watchdog_loop():
         if not _is_url_reachable(url):
             _kill_chromium()
             time.sleep(1)
-            _launch_chromium('http://127.0.0.1:5000/kiosk/error-page')
+            _launch_chromium(f'http://127.0.0.1:{BIND_PORT}/kiosk/error-page')
 
 
 def _kill_chromium():

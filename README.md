@@ -36,7 +36,7 @@ pip3 install -r requirements.txt
 python3 app.py
 ```
 
-Open `http://localhost:5000` in your browser.
+Open `http://localhost` in your browser.
 
 ## Production Deployment
 
@@ -73,7 +73,7 @@ sudo systemctl enable kiosk-resolution
 |---|---|---|
 | `KIOSK_SECRET_KEY` | (built-in) | Flask session secret key |
 | `KIOSK_BIND_HOST` | `0.0.0.0` | Bind address |
-| `KIOSK_BIND_PORT` | `5000` | Bind port |
+| `KIOSK_BIND_PORT` | `80` | Bind port |
 | `KIOSK_LAN_ONLY` | `false` | Restrict access to LAN IPs only |
 
 ## Security

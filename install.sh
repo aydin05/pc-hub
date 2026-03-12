@@ -33,7 +33,7 @@ REAL_HOME=$(eval echo "~$REAL_USER")
 # ── Config ───────────────────────────────────────────────────
 INSTALL_DIR="/opt/kiosk-manager"
 SERVICE_USER="$REAL_USER"
-PORT=5000
+PORT=80
 KIOSK_URL="https://www.google.com"
 
 # ══════════════════════════════════════════════════════════════
@@ -268,6 +268,14 @@ add_sudoers_entry nmcli ""
 add_sudoers_entry timedatectl ""
 add_sudoers_entry hostnamectl ""
 
+# Network config: ifupdown support
+add_sudoers_entry ifdown ""
+add_sudoers_entry ifup ""
+
+# File writing: tee and cp for /etc/network/interfaces, /etc/environment
+add_sudoers_entry tee ""
+add_sudoers_entry cp ""
+
 # Display sudoers entries (always add since we install X11 on headless too)
 add_sudoers_entry xrandr ""
 add_sudoers_entry wlr-randr ""
@@ -470,7 +478,7 @@ fi
 CHROME_FLAGS+=(--disable-gpu --disable-software-rasterizer)
 
 # Always start with the loading page
-LOADING_URL="http://localhost:5000/kiosk/loading"
+LOADING_URL="http://localhost:__PORT__/kiosk/loading"
 
 # Launch Chrome in a loop
 while true; do
@@ -490,6 +498,7 @@ done
 XINITRC
 
     sed -i "s|__BROWSER__|$BROWSER|g" "$REAL_HOME/.xinitrc"
+    sed -i "s|__PORT__|$PORT|g" "$REAL_HOME/.xinitrc"
     chmod +x "$REAL_HOME/.xinitrc"
     chown "$SERVICE_USER":"$SERVICE_USER" "$REAL_HOME/.xinitrc"
 

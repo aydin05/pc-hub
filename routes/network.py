@@ -331,8 +331,12 @@ def _set_proxy_settings(http_proxy, https_proxy, no_proxy):
         lines.append(f'NO_PROXY="{no_proxy}"')
 
     try:
-        with open(env_file, 'w') as f:
-            f.write('\n'.join(lines) + '\n')
+        content = '\n'.join(lines) + '\n'
+        proc = subprocess.run(['sudo', 'tee', env_file],
+                              input=content, capture_output=True, text=True, timeout=10)
+        if proc.returncode != 0:
+            logger.error('Failed to write %s: %s', env_file, proc.stderr)
+            return
         logger.info('Proxy settings updated in %s', env_file)
     except Exception as e:
         logger.error('Failed to write proxy settings: %s', e)
@@ -484,7 +488,6 @@ def _configure_nmcli(nmcli, iface, method, data):
 
 def _configure_ifupdown(iface, method, data):
     """Configure network interface via /etc/network/interfaces."""
-    import shutil
     interfaces_file = '/etc/network/interfaces'
 
     if method == 'static':
@@ -550,10 +553,12 @@ def _configure_ifupdown(iface, method, data):
             new_lines.pop()
         new_content = '\n'.join(new_lines) + '\n\n' + block
 
-        # Backup and write
-        shutil.copy2(interfaces_file, interfaces_file + '.bak')
-        with open(interfaces_file, 'w') as f:
-            f.write(new_content)
+        # Backup and write (use sudo since service may run as non-root)
+        _run_cmd(['sudo', 'cp', '-a', interfaces_file, interfaces_file + '.bak'])
+        proc = subprocess.run(['sudo', 'tee', interfaces_file],
+                              input=new_content, capture_output=True, text=True, timeout=10)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr)
 
         logger.info('Wrote ifupdown config for %s', iface)
     except Exception as e:
