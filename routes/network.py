@@ -215,6 +215,10 @@ def _configure_nmcli(nmcli, iface, method, data):
         if gateway and not SAFE_IP_RE.match(gateway):
             return jsonify({'error': 'Invalid gateway'}), 400
 
+        # nmcli requires CIDR notation — default to /24 if not provided
+        if '/' not in ip_addr:
+            ip_addr = ip_addr + '/24'
+
         cmd = [
             'sudo', nmcli, 'con', 'mod', conn_name,
             'ipv4.method', 'manual',

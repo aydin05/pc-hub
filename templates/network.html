@@ -43,12 +43,12 @@
         </div>
         <div id="static-fields" style="display:none;">
             <div class="form-group">
-                <label class="form-label">IP Address / CIDR</label>
-                <input type="text" class="form-input" id="config-ip" placeholder="192.168.1.100/24">
+                <label class="form-label">IP Address</label>
+                <input type="text" class="form-input ip-input" id="config-ip" placeholder="192.168.1.100" maxlength="15">
             </div>
             <div class="form-group">
                 <label class="form-label">Gateway</label>
-                <input type="text" class="form-input" id="config-gateway" placeholder="192.168.1.1">
+                <input type="text" class="form-input ip-input" id="config-gateway" placeholder="192.168.1.1" maxlength="15">
             </div>
             <div class="form-group">
                 <label class="form-label">DNS Servers (comma separated)</label>
@@ -137,6 +137,35 @@ function setHostname() {
     }).catch(err => Toast.error(err.message));
 }
 
-document.addEventListener('DOMContentLoaded', loadInterfaces);
+document.addEventListener('DOMContentLoaded', () => {
+    loadInterfaces();
+
+    document.querySelectorAll('.ip-input').forEach(input => {
+        input.addEventListener('input', function(e) {
+            let val = this.value.replace(/[^0-9.]/g, '');
+            const parts = val.split('.');
+            // Limit to 4 octets
+            if (parts.length > 4) parts.length = 4;
+            // Cap each octet to 3 digits and value 0-255
+            for (let i = 0; i < parts.length; i++) {
+                if (parts[i].length > 3) parts[i] = parts[i].slice(0, 3);
+                if (parseInt(parts[i], 10) > 255) parts[i] = '255';
+            }
+            val = parts.join('.');
+            this.value = val;
+        });
+        input.addEventListener('keyup', function(e) {
+            if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') return;
+            const parts = this.value.split('.');
+            if (parts.length < 4) {
+                const last = parts[parts.length - 1];
+                // Auto-add dot after 3 digits or when octet reaches 26+ (must be done)
+                if (last.length === 3 || (last.length >= 1 && parseInt(last, 10) > 25 && last.length >= 2)) {
+                    this.value += '.';
+                }
+            }
+        });
+    });
+});
 </script>
 {% endblock %}
