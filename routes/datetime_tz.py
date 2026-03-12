@@ -153,41 +153,52 @@ def set_ntp():
 @datetime_bp.route('/api/ntp-server')
 @login_required
 def get_ntp_server():
-    """Read current NTP server from systemd-timesyncd config."""
-    ntp_server = ''
+    """Read current NTP and FallbackNTP servers from systemd-timesyncd config."""
+    ntp_servers = ''
+    fallback_servers = ''
     try:
         with open('/etc/systemd/timesyncd.conf', 'r') as f:
             for line in f:
                 line = line.strip()
                 if line.startswith('NTP='):
-                    ntp_server = line.split('=', 1)[1].strip()
-                    break
-                elif line.startswith('FallbackNTP=') and not ntp_server:
-                    ntp_server = line.split('=', 1)[1].strip()
+                    ntp_servers = line.split('=', 1)[1].strip()
+                elif line.startswith('FallbackNTP='):
+                    fallback_servers = line.split('=', 1)[1].strip()
     except FileNotFoundError:
         pass
     except Exception as e:
         logger.warning('Could not read timesyncd.conf: %s', e)
-    return jsonify({'ntp_server': ntp_server})
+    return jsonify({
+        'ntp_server': ntp_servers,
+        'fallback_ntp': fallback_servers,
+    })
 
 
 @datetime_bp.route('/api/ntp-server', methods=['POST'])
 @login_required
 def set_ntp_server():
-    """Set custom NTP server in systemd-timesyncd config."""
+    """Set NTP and FallbackNTP servers in systemd-timesyncd config."""
     data = request.get_json()
-    server = data.get('server', '').strip()
+    servers = data.get('server', '').strip()
+    fallback = data.get('fallback', '').strip()
 
-    if not server:
-        return jsonify({'error': 'NTP server address is required'}), 400
+    if not servers and not fallback:
+        return jsonify({'error': 'At least one NTP server is required'}), 400
 
-    # Validate: basic hostname/IP check
-    if not re.match(r'^[a-zA-Z0-9._\-:]+$', server):
-        return jsonify({'error': 'Invalid NTP server address'}), 400
+    # Validate: space-separated hostnames/IPs
+    server_re = re.compile(r'^[a-zA-Z0-9._\-:]+$')
+    for s in (servers.split() + fallback.split()):
+        if s and not server_re.match(s):
+            return jsonify({'error': f'Invalid NTP server address: {s}'}), 400
 
     try:
-        conf_content = '[Time]\nNTP={}\n'.format(server)
-        # Write to a temp file then move (needs sudo)
+        lines = ['[Time]']
+        if servers:
+            lines.append(f'NTP={servers}')
+        if fallback:
+            lines.append(f'FallbackNTP={fallback}')
+        conf_content = '\n'.join(lines) + '\n'
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as tmp:
             tmp.write(conf_content)
             tmp_path = tmp.name
@@ -205,8 +216,8 @@ def set_ntp_server():
         if sys.has('timedatectl'):
             _run_cmd(['sudo', sys.bin('timedatectl'), 'set-ntp', 'true'])
 
-        logger.info('NTP server set to: %s', server)
-        return jsonify({'success': True, 'ntp_server': server})
+        logger.info('NTP servers set to: %s (fallback: %s)', servers, fallback)
+        return jsonify({'success': True, 'ntp_server': servers, 'fallback_ntp': fallback})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

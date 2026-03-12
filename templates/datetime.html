@@ -47,13 +47,16 @@
             <span>Enable NTP (automatic time sync)</span>
         </div>
         <div class="form-group">
-            <label class="form-label">NTP Server</label>
-            <div style="display:flex;gap:8px;">
-                <input type="text" class="form-input" id="ntp-server" placeholder="e.g. pool.ntp.org" style="flex:1;">
-                <button class="btn btn-primary" onclick="setNtpServer()">Save</button>
-            </div>
-            <small class="text-muted" style="display:block;margin-top:4px;">Custom NTP server address. Leave blank for system default.</small>
+            <label class="form-label">NTP Servers</label>
+            <input type="text" class="form-input" id="ntp-server" placeholder="e.g. pool.ntp.org time.google.com">
+            <small class="text-muted" style="display:block;margin-top:4px;">Space-separated list of primary NTP servers.</small>
         </div>
+        <div class="form-group">
+            <label class="form-label">Fallback NTP Servers</label>
+            <input type="text" class="form-input" id="ntp-fallback" placeholder="e.g. 0.debian.pool.ntp.org 1.debian.pool.ntp.org">
+            <small class="text-muted" style="display:block;margin-top:4px;">Space-separated fallback servers used when primary servers are unreachable.</small>
+        </div>
+        <button class="btn btn-primary" onclick="setNtpServer()">Save NTP Settings</button>
     </div>
 
     <div class="card">
@@ -128,14 +131,16 @@ function setNtp() {
 function loadNtpServer() {
     api('/datetime/api/ntp-server').then(data => {
         $('#ntp-server').value = data.ntp_server || '';
+        $('#ntp-fallback').value = data.fallback_ntp || '';
     }).catch(() => {});
 }
 
 function setNtpServer() {
     const server = $('#ntp-server').value.trim();
-    if (!server) return Toast.warning('Enter an NTP server address');
-    api('/datetime/api/ntp-server', { method: 'POST', body: { server } }).then(() => {
-        Toast.success('NTP server set to ' + server);
+    const fallback = $('#ntp-fallback').value.trim();
+    if (!server && !fallback) return Toast.warning('Enter at least one NTP server');
+    api('/datetime/api/ntp-server', { method: 'POST', body: { server, fallback } }).then(() => {
+        Toast.success('NTP servers updated');
         loadTimeInfo();
     }).catch(err => Toast.error(err.message));
 }
