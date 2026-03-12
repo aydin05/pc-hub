@@ -433,10 +433,17 @@ xset s off
 xset -dpms
 xset s noblank
 
-# Hide cursor using a blank X11 cursor bitmap
-BLANK_CUR="$HOME/.blank_cursor.xbm"
-printf '#define b_width 1\n#define b_height 1\nstatic unsigned char b_bits[] = { 0x00 };\n' > "$BLANK_CUR"
-xsetroot -cursor "$BLANK_CUR" "$BLANK_CUR"
+# Hide cursor using X11 XFixes extension (works inside Chrome too)
+python3 -c '
+import ctypes
+x = ctypes.cdll.LoadLibrary("libX11.so.6")
+f = ctypes.cdll.LoadLibrary("libXfixes.so.3")
+d = x.XOpenDisplay(None)
+if d:
+    f.XFixesHideCursor(d, x.XDefaultRootWindow(d))
+    x.XSync(d, False)
+    x.XCloseDisplay(d)
+' 2>/dev/null &
 
 # Start openbox window manager
 openbox-session &

@@ -264,24 +264,30 @@ def kill():
     return jsonify({'success': True})
 
 
+_XFIXES_SCRIPT = '''
+import ctypes
+x = ctypes.cdll.LoadLibrary("libX11.so.6")
+f = ctypes.cdll.LoadLibrary("libXfixes.so.3")
+d = x.XOpenDisplay(None)
+if d:
+    f.{func}(d, x.XDefaultRootWindow(d))
+    x.XSync(d, False)
+    x.XCloseDisplay(d)
+'''
+
+
 def _apply_cursor_setting(show_cursor):
-    """Show or hide the cursor on the display using xsetroot."""
+    """Show or hide the cursor using X11 XFixes extension."""
     env = get_sys().get_env_with_display()
+    func = 'XFixesShowCursor' if show_cursor else 'XFixesHideCursor'
+    script = _XFIXES_SCRIPT.format(func=func)
     try:
-        if show_cursor:
-            subprocess.run(['xsetroot', '-cursor_name', 'left_ptr'],
-                           env=env, timeout=5, capture_output=True)
-            logger.info('Cursor enabled (xsetroot default)')
+        result = subprocess.run(['python3', '-c', script],
+                                env=env, timeout=5, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.warning('XFixes cursor %s failed: %s', func, result.stderr.strip())
         else:
-            home = env.get('HOME', os.path.expanduser('~'))
-            blank = os.path.join(home, '.blank_cursor.xbm')
-            if not os.path.isfile(blank):
-                with open(blank, 'w') as f:
-                    f.write('#define b_width 1\n#define b_height 1\n'
-                            'static unsigned char b_bits[] = { 0x00 };\n')
-            subprocess.run(['xsetroot', '-cursor', blank, blank],
-                           env=env, timeout=5, capture_output=True)
-            logger.info('Cursor hidden (xsetroot blank)')
+            logger.info('Cursor %s (XFixes)', 'shown' if show_cursor else 'hidden')
     except Exception as e:
         logger.warning('Could not apply cursor setting: %s', e)
 
