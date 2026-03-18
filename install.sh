@@ -66,6 +66,9 @@ elif command -v pacman &>/dev/null; then
 fi
 
 # Detect display server
+# Only treat as non-headless if there is an ACTIVE display session or
+# a display manager is running. Xorg/Xwayland binaries alone do NOT count
+# (they may have been installed by a previous partial kiosk setup).
 HEADLESS=true
 if [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
     DISPLAY_SERVER="wayland"
@@ -74,9 +77,7 @@ elif [ -n "$DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "x11" ]; then
     DISPLAY_SERVER="x11"
     HEADLESS=false
 else
-    if command -v Xorg &>/dev/null || command -v Xwayland &>/dev/null || \
-       systemctl is-active display-manager &>/dev/null 2>&1 || \
-       [ -d /usr/share/xsessions ] || [ -d /usr/share/wayland-sessions ]; then
+    if systemctl is-active display-manager &>/dev/null 2>&1; then
         HEADLESS=false
         DISPLAY_SERVER="x11"
     fi
