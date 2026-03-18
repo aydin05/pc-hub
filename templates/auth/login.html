@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Kiosk Manager</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}">
     <style>
         .mode-toast {
             position:fixed;top:24px;left:50%;transform:translateX(-50%);
@@ -91,7 +91,7 @@
     })();
     </script>
     {% if keyboard_enabled %}
-    <script src="{{ url_for('static', filename='js/keyboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/keyboard.js') }}?v={{ app_version }}"></script>
     {% endif %}
 </body>
 </html>

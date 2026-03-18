@@ -67,6 +67,10 @@ def create_app():
     def index():
         return redirect(url_for('dashboard.dashboard'))
 
+    # Read version once at startup for cache-busting static assets
+    _version_file = os.path.join(app.root_path, 'version.txt')
+    _app_version = open(_version_file).read().strip() if os.path.exists(_version_file) else '0'
+
     @app.context_processor
     def inject_globals():
         from sysdetect import get_sys
@@ -77,6 +81,7 @@ def create_app():
             'keyboard_enabled': kb_setting and is_local,
             'auth_enabled': get_setting('auth_enabled', '0') == '1',
             'has_display': get_sys().has_display,
+            'app_version': _app_version,
         }
 
     return app

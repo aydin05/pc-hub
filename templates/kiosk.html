@@ -79,8 +79,8 @@
         </div>
         <ul style="color:var(--text-secondary);line-height:2;padding-left:20px;">
             <li>Press <strong>F11</strong> to exit fullscreen</li>
-            <li>Press <strong>W</strong> on login screen to show cursor</li>
-            <li>Press <strong>Q</strong> on login screen for touchscreen mode</li>
+            <li>Press <strong>W</strong> to show cursor (any page)</li>
+            <li>Press <strong>Q</strong> for touchscreen mode (any page)</li>
         </ul>
     </div>
 </div>
@@ -178,6 +178,22 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshStatus();
     setInterval(refreshStatus, 10000);
     loadDevToolsTabs();
+
+    // Instant cursor toggle — apply immediately + restart Chrome
+    const cursorCheckbox = $('#kiosk-cursor');
+    if (cursorCheckbox) {
+        cursorCheckbox.addEventListener('change', function() {
+            const show = this.checked;
+            api('/kiosk/api/cursor', { method: 'POST', body: { show: show } }).then(() => {
+                Toast.success(show ? 'Cursor enabled' : 'Cursor hidden');
+                // Auto-restart Chrome so the change takes effect in the kiosk
+                return api('/kiosk/api/restart', { method: 'POST' });
+            }).then(() => {
+                Toast.info('Chrome restarting to apply cursor change...');
+                setTimeout(refreshStatus, 1500);
+            }).catch(err => Toast.error(err.message));
+        });
+    }
 });
 </script>
 {% endblock %}
