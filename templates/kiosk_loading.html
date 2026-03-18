@@ -263,6 +263,34 @@
             img.src = '/settings/api/logo?t=' + Date.now();
         }
 
+        // --- W/Q cursor shortcuts ---
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'w' || e.key === 'W') {
+                e.preventDefault();
+                fetch('/kiosk/api/cursor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ show: true })
+                }).then(function() {
+                    statusEl.innerHTML = '<div class="status-text status-ok">Cursor enabled — restarting...</div>';
+                    return fetch('/kiosk/api/restart', { method: 'POST' });
+                }).catch(function() {});
+                return;
+            }
+            if (e.key === 'q' || e.key === 'Q') {
+                e.preventDefault();
+                fetch('/kiosk/api/cursor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ show: false })
+                }).then(function() {
+                    statusEl.innerHTML = '<div class="status-text">Cursor hidden — restarting...</div>';
+                    return fetch('/kiosk/api/restart', { method: 'POST' });
+                }).catch(function() {});
+                return;
+            }
+        });
+
         // --- Init ---
         loadLogo();
         loadNetInfo();

@@ -204,35 +204,6 @@ function sidebarShutdown() {
     );
 }
 
-/* === Cursor / Touchscreen Mode Shortcuts (W = cursor, Q = touchscreen) === */
-document.addEventListener('keydown', function(e) {
-    const tag = document.activeElement.tagName;
-    const isTyping = (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement.isContentEditable);
-
-    if (e.key === 'w' || e.key === 'W') {
-        if (isTyping) return;
-        e.preventDefault();
-        fetch('/kiosk/api/cursor', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ show: true })
-        }).catch(() => {});
-        Toast.success('Cursor Mode — cursor visible');
-        return;
-    }
-    if (e.key === 'q' || e.key === 'Q') {
-        if (isTyping) return;
-        e.preventDefault();
-        fetch('/kiosk/api/cursor', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ show: false })
-        }).catch(() => {});
-        Toast.info('Touchscreen Mode — cursor hidden');
-        return;
-    }
-});
-
 /* === Live Clock === */
 function startClock(elementId) {
     const el = document.getElementById(elementId);

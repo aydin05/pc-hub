@@ -56,11 +56,8 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ show: show })
-            }).catch(() => {});
-            fetch('/settings/api/update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keyboard_enabled: show ? '1' : '0' })
+            }).then(() => {
+                return fetch('/kiosk/api/restart', { method: 'POST' });
             }).catch(() => {});
         }
 
