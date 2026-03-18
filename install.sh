@@ -8,6 +8,9 @@
 
 set -e
 
+# ── Ensure sbin paths are in PATH (minimal installs may lack them) ──
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -108,7 +111,7 @@ install_packages() {
     case "$PKG_MGR" in
         apt)
             apt-get update -qq
-            apt-get install -y python3 python3-pip python3-venv git sqlite3 curl
+            apt-get install -y sudo python3 python3-pip python3-venv git sqlite3 curl
             apt-get install -y network-manager 2>/dev/null || true
             apt-get install -y systemd-timesyncd libnss3-tools 2>/dev/null || true
             if [ "$HEADLESS" = true ]; then
@@ -132,7 +135,7 @@ install_packages() {
             fi
             ;;
         dnf|yum)
-            $PKG_MGR install -y python3 python3-pip git sqlite curl
+            $PKG_MGR install -y sudo python3 python3-pip git sqlite curl
             $PKG_MGR install -y NetworkManager 2>/dev/null || true
             $PKG_MGR install -y systemd-timesyncd nss-tools 2>/dev/null || true
             if [ "$HEADLESS" = true ]; then
@@ -152,7 +155,7 @@ install_packages() {
             fi
             ;;
         pacman)
-            pacman -Sy --noconfirm python python-pip git sqlite curl
+            pacman -Sy --noconfirm sudo python python-pip git sqlite curl
             pacman -S --noconfirm networkmanager 2>/dev/null || true
             pacman -S --noconfirm nss 2>/dev/null || true
             if [ "$HEADLESS" = true ]; then
@@ -296,10 +299,15 @@ done
 
 chmod 440 "$SUDOERS_FILE"
 
-if visudo -cf "$SUDOERS_FILE" &>/dev/null; then
-    log "Sudoers configured at $SUDOERS_FILE"
+VISUDO_BIN=$(command -v visudo 2>/dev/null || echo "/usr/sbin/visudo")
+if [ -x "$VISUDO_BIN" ]; then
+    if $VISUDO_BIN -cf "$SUDOERS_FILE" &>/dev/null; then
+        log "Sudoers configured at $SUDOERS_FILE"
+    else
+        error "Sudoers file has syntax errors! Check $SUDOERS_FILE"
+    fi
 else
-    error "Sudoers file has syntax errors! Check $SUDOERS_FILE"
+    warn "visudo not found — skipping syntax check (sudoers file written to $SUDOERS_FILE)"
 fi
 
 # ══════════════════════════════════════════════════════════════
