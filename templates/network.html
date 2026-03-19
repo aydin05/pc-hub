@@ -186,8 +186,12 @@ function applyConfig() {
     Modal.show('Apply Network Configuration',
         'This will modify the network settings for <strong>' + escapeHtml(currentIface) + '</strong>. The connection may be briefly interrupted.',
         () => {
-            api('/network/api/configure', { method: 'POST', body: data }).then(() => {
-                Toast.success('Network configuration applied');
+            api('/network/api/configure', { method: 'POST', body: data }).then(res => {
+                if (res.warning) {
+                    Toast.warning(res.warning);
+                } else {
+                    Toast.success('Network configuration applied');
+                }
                 setTimeout(loadInterfaces, 2000);
             }).catch(err => Toast.error(err.message));
         },

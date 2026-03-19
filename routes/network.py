@@ -509,10 +509,11 @@ def _configure_nmcli(nmcli, iface, method, data):
     else:
         return jsonify({'error': 'Invalid method'}), 400
 
-    _run_cmd(['sudo', nmcli, 'con', 'down', conn_name])
-    out, rc = _run_cmd(['sudo', nmcli, 'con', 'up', conn_name])
+    _run_cmd(['sudo', nmcli, 'con', 'down', conn_name], timeout=15)
+    out, rc = _run_cmd(['sudo', nmcli, 'con', 'up', conn_name], timeout=30)
     if rc != 0:
-        return jsonify({'error': f'Settings saved but failed to bring connection up: {out[:200]}'}), 500
+        logger.warning('Settings saved but could not bring %s up immediately: %s', conn_name, out[:200])
+        return jsonify({'success': True, 'warning': 'Settings saved. Interface will be reconfigured on reboot.'})
 
     return jsonify({'success': True})
 
@@ -597,10 +598,11 @@ def _configure_ifupdown(iface, method, data):
         return jsonify({'error': f'Failed to write config: {e}'}), 500
 
     # Restart the interface
-    _run_cmd(['sudo', 'ifdown', iface])
-    out, rc = _run_cmd(['sudo', 'ifup', iface])
+    _run_cmd(['sudo', 'ifdown', iface], timeout=15)
+    out, rc = _run_cmd(['sudo', 'ifup', iface], timeout=30)
     if rc != 0:
-        return jsonify({'error': f'Config saved but failed to bring interface up: {out[:200]}'}), 500
+        logger.warning('Config saved but could not bring %s up immediately: %s', iface, out[:200])
+        return jsonify({'success': True, 'warning': 'Settings saved. Interface will be reconfigured on reboot.'})
 
     return jsonify({'success': True})
 
