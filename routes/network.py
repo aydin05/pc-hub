@@ -111,14 +111,9 @@ def _get_iface_config_linux(iface_name):
     ip_bin = sys.bin('ip')
     config = {'method': 'dhcp', 'ip': '', 'subnet': '', 'gateway': '', 'dns': ''}
 
-    # Try ifupdown first
-    ifup_config = _parse_ifupdown_config(iface_name)
-    if ifup_config['method'] == 'static' and ifup_config['ip']:
-        return ifup_config
-
-    # Try NM
+    # Try NM first — it is authoritative when it manages the interface
     nmcli = sys.bin('nmcli')
-    if nmcli:
+    if nmcli and _is_nm_managed(nmcli, iface_name):
         output, rc = _run_cmd([nmcli, '-g', 'GENERAL.CONNECTION', 'device', 'show', iface_name])
         if rc == 0 and output.strip() and output.strip() != '--':
             conn = output.strip()
@@ -143,6 +138,11 @@ def _get_iface_config_linux(iface_name):
             if out.strip():
                 config['dns'] = out.strip().replace(' ', ', ')
             return config
+
+    # Fallback: ifupdown
+    ifup_config = _parse_ifupdown_config(iface_name)
+    if ifup_config['method'] == 'static' and ifup_config['ip']:
+        return ifup_config
 
     # Fallback: get from ip command
     if ip_bin:
@@ -415,6 +415,33 @@ def _get_connection_name(nmcli, iface):
     return iface
 
 
+def _remove_ifupdown_iface(iface):
+    """Remove any stanza for iface from /etc/network/interfaces (best-effort)."""
+    interfaces_file = '/etc/network/interfaces'
+    if not os.path.exists(interfaces_file):
+        return
+    try:
+        with open(interfaces_file) as f:
+            content = f.read()
+        lines = content.split('\n')
+        new_lines = []
+        skip = False
+        for line in lines:
+            if re.match(rf'^(auto|iface|allow-hotplug)\s+{re.escape(iface)}\b', line):
+                skip = True
+                continue
+            if skip and (line.startswith('    ') or line.startswith('\t') or line.strip() == ''):
+                continue
+            skip = False
+            new_lines.append(line)
+        new_content = '\n'.join(new_lines)
+        subprocess.run(['sudo', 'tee', interfaces_file],
+                       input=new_content, capture_output=True, text=True, timeout=10)
+        logger.info('Removed ifupdown stanza for %s from %s', iface, interfaces_file)
+    except Exception as e:
+        logger.warning('Could not remove ifupdown stanza for %s: %s', iface, e)
+
+
 def _configure_nmcli(nmcli, iface, method, data):
     """Configure network interface using nmcli."""
     conn_name = _get_connection_name(nmcli, iface)
@@ -423,12 +450,16 @@ def _configure_nmcli(nmcli, iface, method, data):
         output, rc = _run_cmd([
             'sudo', nmcli, 'con', 'mod', conn_name,
             'ipv4.method', 'auto',
-            'ipv4.addresses', '',
             'ipv4.gateway', '',
             'ipv4.dns', '',
         ])
         if rc != 0:
             return jsonify({'error': f'Failed to set DHCP: {output[:200]}'}), 500
+        # Clear any leftover static addresses separately (empty string clears the list)
+        _run_cmd(['sudo', nmcli, 'con', 'mod', conn_name, 'ipv4.addresses', ''])
+        # Also remove static stanza from /etc/network/interfaces to prevent
+        # networking.service from re-applying the old static IP on reboot
+        _remove_ifupdown_iface(iface)
 
     elif method == 'static':
         ip_addr = data.get('ip', '')
