@@ -143,15 +143,20 @@ def _get_iface_config_linux(iface_name):
     ifup_config = _parse_ifupdown_config(iface_name)
     if ifup_config['method'] == 'static' and ifup_config['ip']:
         return ifup_config
+    if ifup_config['method'] == 'dhcp':
+        # Interface is managed by ifupdown as DHCP — don't fall through to the
+        # ip command which cannot distinguish DHCP from static and would
+        # incorrectly mark the DHCP-assigned IP as a static config.
+        return ifup_config
 
-    # Fallback: get from ip command
+    # Fallback: get from ip command (do NOT set method here — we can't tell
+    # whether the current IP was assigned by DHCP or configured statically)
     if ip_bin:
         ip_out, _ = _run_cmd([ip_bin, '-4', 'addr', 'show', iface_name])
         ip_match = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)/(\d+)', ip_out)
         if ip_match:
             config['ip'] = ip_match.group(1)
             config['subnet'] = _cidr_to_subnet_mask(ip_match.group(2))
-            config['method'] = 'static'
         route_out, _ = _run_cmd([ip_bin, 'route', 'show', 'dev', iface_name])
         gw_match = re.search(r'default via\s+([\d.]+)', route_out)
         if gw_match:
